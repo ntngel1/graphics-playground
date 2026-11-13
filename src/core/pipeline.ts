@@ -178,11 +178,13 @@ export function createPipeline(glc: GLContext, exp: Experiment, overlay: Overlay
       for (const { pass, e, slot } of passes) {
         if (!e.prog) continue
         if ((pass.target ?? 'screen') !== 'screen' && !slot?.buf) continue
-        if (!advance && slot?.spec.pingPong) continue
+        const sim = !!slot?.spec.pingPong
+        if (!advance && sim && !pass.whenPaused) continue
         if (pass.enabled && !pass.enabled(ctx.params)) continue
-        const extra = pass.uniforms ? pass.uniforms(ctx) : null
-        const n = typeof pass.iterations === 'function' ? pass.iterations(ctx.params) : (pass.iterations ?? 1)
-        for (let it = 0; it < n; it++) draw(e.prog, slot, pass.inputs, extra)
+        const extra: Record<string, ParamValue> = { ...pass.uniforms?.(ctx), uAdvance: advance }
+        let n = typeof pass.iterations === 'function' ? pass.iterations(ctx.params) : (pass.iterations ?? 1)
+        if (!advance && sim) n = 1 // whenPaused: один прогон с uAdvance = false (например, только кисть)
+        for (let it = 0; it < n; it++) draw(e.prog, slot, pass.inputs, { ...extra, uIteration: it })
       }
     },
     onShaderUpdate(id) {

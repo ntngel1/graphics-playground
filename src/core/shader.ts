@@ -36,6 +36,7 @@ uniform vec2 uScreen;
 uniform vec4 uMouse;
 uniform vec4 uMousePrev;
 uniform int uFrame;
+uniform int uIteration; // номер итерации прохода внутри кадра (0..iterations-1)
 uniform vec3 uCamPos;
 uniform vec3 uCamTarget;
 in vec2 vUv;

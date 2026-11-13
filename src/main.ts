@@ -19,6 +19,7 @@ const input = createInput(canvas)
 let experiments = registry
 
 interface Current {
+  ui: { root: HTMLElement; dispose?: () => void } | null
   id: string
   exp: Experiment
   params: Params
@@ -53,7 +54,7 @@ function frame(l: Loop, advance: boolean) {
     ctx,
     advance,
   )
-  if (advance) mousePrev = mouse
+  mousePrev = mouse
   if (screenshot) {
     screenshot = false
     // toBlob в том же таске, что и отрисовка, — буфер ещё не очищен (preserveDrawingBuffer не нужен)
@@ -184,13 +185,12 @@ function load(id: string, values: ParamValues, keepState = false) {
 
   // HMR index.ts: буферы с той же раскладкой переезжают в новый пайплайн вместе с содержимым
   const kept = keepState ? cur?.pipeline.detachBuffers(exp.buffers) : undefined
-  cur?.pipeline.dispose()
-  cur?.folder.dispose()
+  unload()
 
   const params = createParams(exp.params ?? {}, values)
   const pipeline = createPipeline(glc, exp, overlay, kept)
   const folder = pane.addFolder({ title: exp.name, index: 0 })
-  cur = { id, exp, params, pipeline, folder }
+  cur = { id, exp, params, pipeline, folder, ui: null }
 
   const pick = { experiment: id }
   folder
@@ -215,6 +215,13 @@ function load(id: string, values: ParamValues, keepState = false) {
   }
   params.bind(folder, () => ctx, paramsChanged)
 
+  if (exp.mount) {
+    const root = document.createElement('div')
+    root.className = 'gp-exp-ui'
+    document.body.append(root)
+    cur.ui = { root, dispose: exp.mount(root, ctx) ?? undefined }
+  }
+
   input.setCamera(exp.camera, keepState)
   if (!keepState) {
     loop.scale = exp.renderScale ?? 1 // масштаб — свойство эксперимента (тяжёлым — меньше)
@@ -230,6 +237,8 @@ function load(id: string, values: ParamValues, keepState = false) {
 function unload() {
   cur?.pipeline.dispose()
   cur?.folder.dispose()
+  cur?.ui?.dispose?.()
+  cur?.ui?.root.remove()
   cur = null
 }
 

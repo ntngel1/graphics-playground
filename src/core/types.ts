@@ -35,6 +35,7 @@ export type ParamValues = Record<string, ParamValue>
 //    uMousePrev — значение на прошлом кадре; в первый кадр нажатия xy совпадает с uMouse;
 //  - inputs: { uState: 'state' } → sampler2D uState (текущее состояние буфера) и vec2 uStateSize (px).
 //    texel = 1.0 / uStateSize;
+//  - int uIteration — номер итерации прохода в кадре; bool uAdvance — false при перерисовке на паузе;
 //  - init-проход буфера получает те же юниформы + float uSeed (случайное при каждом init)
 //    + доп. юниформы из ctx.reinit({...}).
 //
@@ -60,6 +61,8 @@ export interface Pass {
   iterations?: number | ((p: ParamValues) => number) // прогонов за кадр (ping-pong свапается каждый раз)
   enabled?: (p: ParamValues) => boolean
   uniforms?: (ctx: ExperimentContext) => Record<string, ParamValue> // доп. юниформы прохода
+  // проход в ping-pong буфер выполняется и на паузе (1 итерация, bool uAdvance = false) — напр. чтобы рисовать
+  whenPaused?: boolean
 }
 
 // ---------- Камера ----------
@@ -88,6 +91,9 @@ export interface Experiment {
   // Нажатие/перетаскивание по канвасу (uv 0..1, y вверх). Вызывается в дополнение к uMouse.
   onPointer?: (e: PointerInfo, ctx: ExperimentContext) => void
   onPreset?: (name: string, ctx: ExperimentContext) => void // после применения пресета из панели
+  // Свой DOM поверх канваса (палитра, кнопки): root смонтирован в body, прячется по H и в галерее.
+  // Возвращаемая функция вызывается при выгрузке/пересоздании эксперимента (снять слушатели и т.п.).
+  mount?: (root: HTMLElement, ctx: ExperimentContext) => (() => void) | void
 }
 
 export interface PointerInfo {

@@ -89,7 +89,7 @@ export interface Params {
   bind(folder: FolderApi | Pane, ctx: () => ExperimentContext, onChange: () => void): void
 }
 
-const RESERVED = new Set(['uTime', 'uFrame', 'uResolution', 'uMouse', 'uMousePrev', 'uCamPos', 'uCamTarget', 'uSeed', 'uScreen'])
+const RESERVED = new Set(['uTime', 'uFrame', 'uResolution', 'uMouse', 'uMousePrev', 'uCamPos', 'uCamTarget', 'uSeed', 'uScreen', 'uIteration', 'uAdvance'])
 
 export function createParams(schema: ParamSchema, initial: ParamValues): Params {
   for (const [k, d] of Object.entries(schema)) {
