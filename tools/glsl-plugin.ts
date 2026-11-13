@@ -12,7 +12,8 @@ import path from 'node:path'
 import type { Plugin } from 'vite'
 
 const SHADER_RE = /\.(glsl|frag|vert)$/
-export const INCLUDE_RE = /^\s*#include\s+["<]([^">]+)[">]\s*;?\s*$/
+// #include "file" — рядом с файлом, затем src/glsl; #include <file> — только src/glsl.
+export const INCLUDE_RE = /^\s*#include\s+(?:"([^"]+)"|<([^>]+)>)\s*;?\s*$/
 
 export function glslModules(opts: { libDir?: string } = {}): Plugin {
   let root = process.cwd()
@@ -31,12 +32,13 @@ export function glslModules(opts: { libDir?: string } = {}): Plugin {
       code.split(/\r?\n/).forEach((line, i) => {
         const m = INCLUDE_RE.exec(line)
         if (!m) return
-        const req = path.extname(m[1]) ? m[1] : m[1] + '.glsl'
+        const name = m[1] ?? m[2]
+        const req = path.extname(name) ? name : name + '.glsl'
         const candidates = req.startsWith('/')
           ? [path.join(root, req)]
-          : [path.resolve(path.dirname(id), req), path.resolve(lib, req)]
+          : m[2] ? [path.resolve(lib, req)] : [path.resolve(path.dirname(id), req), path.resolve(lib, req)]
         const file = candidates.find((f) => fs.existsSync(f))
-        if (!file) this.error(`#include "${m[1]}" not found (${path.relative(root, id)}:${i + 1})`)
+        if (!file) this.error(`#include ${line.trim()} not found (${path.relative(root, id)}:${i + 1})`)
         const v = `__inc${imports.length}`
         imports.push(`import ${v} from ${JSON.stringify(file)};`)
         includes.push(`[${i}, ${v}]`)

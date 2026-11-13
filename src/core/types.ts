@@ -52,6 +52,8 @@ export interface CameraSpec {
   distance?: number
   yaw?: number // рад
   pitch?: number // рад
+  minPitch?: number // рад; > 0 — камера не уходит под горизонт цели (по умолчанию -1.55)
+  maxPitch?: number // рад (по умолчанию 1.55)
   minDistance?: number
   maxDistance?: number
 }

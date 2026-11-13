@@ -40,7 +40,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
 
   const update = () => {
     dist = Math.min(spec.maxDistance ?? 50, Math.max(spec.minDistance ?? 0.2, dist))
-    pitch = Math.min(1.55, Math.max(-1.55, pitch))
+    pitch = Math.min(spec.maxPitch ?? 1.55, Math.max(spec.minPitch ?? -1.55, pitch))
     const t = input.camera.target
     input.camera.pos = [
       t[0] + dist * Math.cos(pitch) * Math.sin(yaw),
