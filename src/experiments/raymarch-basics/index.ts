@@ -1,6 +1,9 @@
 import { defineExperiment } from '../../core/types.ts'
 import frag from './scene.frag'
 
+// Фаза анимации копится по dt, поэтому движение ползунка speed не даёт скачка.
+let phase = 0
+
 export default defineExperiment({
   name: 'Raymarch basics',
   description: 'Примитивы со smooth union и смешиванием материалов, мягкие тени, AO, туман. Камера — мышью.',
@@ -18,7 +21,15 @@ export default defineExperiment({
     maxSteps: { label: 'max steps', value: 160, min: 16, max: 400, step: 1, folder: 'march' },
     debug: { value: 'final', options: ['final', 'normals', 'steps', 'ao', 'shadow', 'depth'], folder: 'march' },
   },
-  passes: [{ frag }],
+  passes: [
+    {
+      frag,
+      uniforms: (ctx) => {
+        phase = ctx.frame === 0 ? 0 : phase + ctx.dt * (ctx.params.speed as number)
+        return { uPhase: phase }
+      },
+    },
+  ],
   presets: {
     liquid: { blend: 0.95, speed: 0.6, softness: 0.85, colorA: '#d94f8a', colorB: '#3fc9b4' },
     'hard edges': { blend: 0, softness: 0.03, sunHeight: 62, ao: 1.5, colorA: '#ece4d6', colorB: '#c0392b', floor: 'grid' },

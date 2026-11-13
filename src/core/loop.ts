@@ -1,6 +1,7 @@
 export interface Loop {
   time: number
   frame: number
+  dt: number // длительность текущего кадра, с; 0 при перерисовке на паузе
   paused: boolean
   scale: number // масштаб рендера 0.25..1
   fps: number
@@ -22,6 +23,7 @@ export function createLoop(canvas: HTMLCanvasElement, render: (loop: Loop, advan
   const loop: Loop = {
     time: 0,
     frame: 0,
+    dt: 0,
     paused: false,
     scale: 1,
     fps: 0,
@@ -60,11 +62,13 @@ export function createLoop(canvas: HTMLCanvasElement, render: (loop: Loop, advan
     last = now
     if (dt > 0) loop.fps += (1 / dt - loop.fps) * 0.05
     if (!loop.paused) {
+      loop.dt = dt
       render(loop, true)
       loop.time += dt
       loop.frame++
       dirty = false
     } else if (dirty) {
+      loop.dt = 0
       render(loop, false)
       dirty = false
     }

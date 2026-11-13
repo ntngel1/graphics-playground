@@ -89,7 +89,13 @@ export interface Params {
   bind(folder: FolderApi | Pane, ctx: () => ExperimentContext, onChange: () => void): void
 }
 
+const RESERVED = new Set(['uTime', 'uFrame', 'uResolution', 'uMouse', 'uMousePrev', 'uCamPos', 'uCamTarget', 'uSeed'])
+
 export function createParams(schema: ParamSchema, initial: ParamValues): Params {
+  for (const [k, d] of Object.entries(schema)) {
+    const u = uniformName(k, d)
+    if (u && RESERVED.has(u)) console.warn(`[params] '${k}' maps to reserved uniform ${u} — set uniform: false or rename`)
+  }
   const values = defaults(schema)
   let cache: [string, UniformValue][] | null = null
   // Представление для tweakpane: вектора — объектами {x,y,z}.
@@ -160,6 +166,7 @@ export function createParams(schema: ParamSchema, initial: ParamValues): Params 
             : (m as ParamValue)
           cache = null
           onChange()
+          d.onChange?.(ctx())
         })
       }
       refresh = () => bindings.forEach((b) => b.refresh())

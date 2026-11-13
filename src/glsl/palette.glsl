@@ -3,8 +3,20 @@
 vec3 palette(float t, vec3 a, vec3 b, vec3 c, vec3 d) { return a + b * cos(6.28318 * (c * t + d)); }
 
 vec3 palRainbow(float t) { return palette(t, vec3(0.5), vec3(0.5), vec3(1.0), vec3(0.0, 0.33, 0.67)); }
-vec3 palSunset(float t)  { return palette(t, vec3(0.5), vec3(0.5), vec3(1.0, 1.0, 0.5), vec3(0.8, 0.9, 0.3)); }
-vec3 palOcean(float t)   { return palette(t, vec3(0.5), vec3(0.5), vec3(1.0, 0.7, 0.4), vec3(0.0, 0.15, 0.2)); }
+// ночь → пурпур → оранжевый → светло-жёлтый
+vec3 palSunset(float t) {
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = mix(vec3(0.04, 0.02, 0.10), vec3(0.55, 0.10, 0.35), smoothstep(0.0, 0.4, t));
+  c = mix(c, vec3(0.98, 0.45, 0.15), smoothstep(0.3, 0.7, t));
+  return mix(c, vec3(1.0, 0.92, 0.6), smoothstep(0.7, 1.0, t));
+}
+// глубина → бирюза → пена
+vec3 palOcean(float t) {
+  t = clamp(t, 0.0, 1.0);
+  vec3 c = mix(vec3(0.01, 0.03, 0.12), vec3(0.0, 0.32, 0.52), smoothstep(0.0, 0.45, t));
+  c = mix(c, vec3(0.2, 0.78, 0.78), smoothstep(0.35, 0.8, t));
+  return mix(c, vec3(0.92, 1.0, 0.96), smoothstep(0.8, 1.0, t));
+}
 // тепловая карта 0..1: синий → голубой → зелёный → жёлтый → красный
 vec3 palHeat(float t) {
   t = clamp(t, 0.0, 1.0);

@@ -25,23 +25,31 @@ interface Current {
 }
 let cur: Current | null = null
 let screenshot = false
+let mousePrev: [number, number, number, number] = [0, 0, 0, 0]
 
 // ---------- Цикл ----------
-const loop = createLoop(canvas, (l) => {
+const loop = createLoop(canvas, (l, advance) => {
   if (!cur) return
+  const m = input.mouse
+  const mouse: [number, number, number, number] = [m.x * l.width, m.y * l.height, m.down ? 1 : 0, m.alt ? 1 : 0]
+  // в первый кадр нажатия отрезок кисти вырождается в точку
+  if (mouse[2] && !mousePrev[2]) mousePrev = [mouse[0], mouse[1], 0, mousePrev[3]]
   cur.pipeline.render(
     {
       time: l.time,
       frame: l.frame,
       width: l.width,
       height: l.height,
-      mouse: [input.mouse.x * l.width, input.mouse.y * l.height, input.mouse.down ? 1 : 0, 0],
+      mouse,
+      mousePrev,
       camPos: input.camera.pos,
       camTarget: input.camera.target,
     },
     cur.params.uniforms(),
     ctx,
+    advance,
   )
+  if (advance) mousePrev = mouse
   if (screenshot) {
     screenshot = false
     // toBlob в том же таске, что и отрисовка, — буфер ещё не очищен (preserveDrawingBuffer не нужен)
@@ -56,6 +64,8 @@ const loop = createLoop(canvas, (l) => {
   }
 })
 input.onChange = () => loop.paused && loop.requestRedraw()
+input.onPointer = (phase) =>
+  cur?.exp.onPointer?.({ uv: [input.mouse.x, input.mouse.y], phase, shift: input.mouse.alt }, ctx)
 
 const ctx: ExperimentContext = {
   get params() {
@@ -66,6 +76,13 @@ const ctx: ExperimentContext = {
     paramsChanged()
   },
   reset,
+  reinit(uniforms) {
+    cur?.pipeline.reset(uniforms)
+    loop.requestRedraw()
+  },
+  get dt() {
+    return loop.dt
+  },
   get time() {
     return loop.time
   },
@@ -123,11 +140,13 @@ function load(id: string, values: ParamValues, keepState = false) {
   const exp = experiments[id]
   if (!exp) throw new Error('no experiments in src/experiments')
 
+  // HMR index.ts: буферы с той же раскладкой переезжают в новый пайплайн вместе с содержимым
+  const kept = keepState ? cur?.pipeline.detachBuffers(exp.buffers) : undefined
   cur?.pipeline.dispose()
   cur?.folder.dispose()
 
   const params = createParams(exp.params ?? {}, values)
-  const pipeline = createPipeline(glc, exp, overlay)
+  const pipeline = createPipeline(glc, exp, overlay, kept)
   const folder = pane.addFolder({ title: exp.name, index: 0 })
   cur = { id, exp, params, pipeline, folder }
 
@@ -176,6 +195,9 @@ onExperimentsUpdate((next) => {
   experiments = next
   if (cur) load(cur.id, cur.params.values, true)
 })
+
+// Отладочный доступ из консоли / e2e (только dev)
+if (import.meta.env.DEV) Object.assign(window, { __gp: { glc, loop, ctx, get cur() { return cur } } })
 
 // ---------- Клавиши ----------
 addEventListener('keydown', (e) => {

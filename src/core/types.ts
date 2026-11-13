@@ -6,6 +6,7 @@ interface ParamBase {
   label?: string
   uniform?: string | false
   folder?: string // группа в панели
+  onChange?: (ctx: ExperimentContext) => void // только при изменении из панели
 }
 export interface NumberParam extends ParamBase { value: number; min?: number; max?: number; step?: number }
 export interface BoolParam extends ParamBase { value: boolean }
@@ -25,15 +26,30 @@ export type ParamValue = number | boolean | string | number[]
 export type ParamValues = Record<string, ParamValue>
 
 // ---------- Буферы и проходы ----------
-// Шаг 3: именованные offscreen-буферы. Сейчас поддерживается только target: 'screen'.
+// Именованные offscreen-буферы (Experiment.buffers), в которые пишут проходы с target: '<имя>'.
+//
+// Конвенции юниформов в проходе:
+//  - uResolution — размер ТЕКУЩЕГО таргета в px (буфера или экрана);
+//  - uMouse / uMousePrev (vec4) — в px текущего таргета, y вверх: uMouse.xy / uResolution — uv
+//    в любом проходе. z — кнопка зажата, w — модификатор (Shift или правая кнопка).
+//    uMousePrev — значение на прошлом кадре; в первый кадр нажатия xy совпадает с uMouse;
+//  - inputs: { uState: 'state' } → sampler2D uState (текущее состояние буфера) и vec2 uStateSize (px).
+//    texel = 1.0 / uStateSize;
+//  - init-проход буфера получает те же юниформы + float uSeed (случайное при каждом init)
+//    + доп. юниформы из ctx.reinit({...}).
+//
+// Ping-pong: проход пишет во второй слот и меняет слоты после каждой итерации, поэтому чтение
+// буфера внутри его же прохода даёт прошлое состояние. Без pingPong читать свой таргет нельзя.
+// Проходы в pingPong-буферы — «шаг симуляции»: на паузе при перерисовке они не выполняются.
 export interface BufferSpec {
-  scale?: number // доля от размера экрана (по умолчанию 1)
+  // доля от размера канваса (по умолчанию 1); функция — от параметров (разрешение симуляции)
+  scale?: number | ((p: ParamValues) => number)
   size?: [number, number] // фиксированный размер в px, приоритетнее scale
-  format?: 'rgba8' | 'rgba16f' | 'rgba32f'
-  filter?: 'linear' | 'nearest'
-  wrap?: 'clamp' | 'repeat' | 'mirror'
-  pingPong?: boolean // два текстурных слота; чтение из буфера внутри его же прохода даёт прошлое состояние
-  init?: ShaderSource // проход инициализации (при создании и по R)
+  format?: 'rgba8' | 'rgba16f' | 'rgba32f' // по умолчанию rgba16f
+  filter?: 'linear' | 'nearest' // по умолчанию nearest
+  wrap?: 'clamp' | 'repeat' | 'mirror' // по умолчанию clamp
+  pingPong?: boolean
+  init?: ShaderSource // проход инициализации: при создании, по R / ctx.reset() и ctx.reinit()
 }
 
 export interface Pass {
@@ -41,7 +57,7 @@ export interface Pass {
   frag: ShaderSource
   target?: 'screen' | (string & {}) // имя из Experiment.buffers; по умолчанию 'screen'
   inputs?: Record<string, string> // sampler-юниформ → имя буфера, напр. { uState: 'state' }
-  iterations?: number | ((p: ParamValues) => number) // прогонов за кадр (для симуляций)
+  iterations?: number | ((p: ParamValues) => number) // прогонов за кадр (ping-pong свапается каждый раз)
   enabled?: (p: ParamValues) => boolean
   uniforms?: (ctx: ExperimentContext) => Record<string, ParamValue> // доп. юниформы прохода
 }
@@ -68,15 +84,25 @@ export interface Experiment {
   camera?: CameraSpec // включает орбитальную камеру (мышь перестаёт быть «кистью»)
   presets?: Record<string, ParamValues>
   renderScale?: number // масштаб рендера по умолчанию
+  // Нажатие/перетаскивание по канвасу (uv 0..1, y вверх). Вызывается в дополнение к uMouse.
+  onPointer?: (e: PointerInfo, ctx: ExperimentContext) => void
+}
+
+export interface PointerInfo {
+  uv: [number, number]
+  phase: 'down' | 'move' | 'up'
+  shift: boolean
 }
 
 // То, что доступно кнопкам и колбэкам проходов.
 export interface ExperimentContext {
   params: ParamValues
   set(values: ParamValues): void
-  reset(): void
+  reset(): void // время, кадр и init всех буферов
+  reinit(uniforms?: Record<string, ParamValue>): void // только init буферов, с доп. юниформами
   time: number
   frame: number
+  dt: number // с, длительность кадра; 0 на паузе — для накопления фазы в Pass.uniforms
 }
 
 export const defineExperiment = <T extends Experiment>(e: T): T => e

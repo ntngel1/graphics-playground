@@ -5,7 +5,7 @@
 #include <pattern>
 
 uniform float uBlend;
-uniform float uSpeed;
+uniform float uPhase; // накопленное время анимации (speed интегрируется в index.ts — без скачков)
 uniform float uSunAzimuth;
 uniform float uSunHeight;
 uniform float uSoftness;
@@ -49,7 +49,7 @@ float map(vec3 p) { return scene(p).x; }
 vec3 srgbToLinear(vec3 c) { return pow(c, vec3(2.2)); }
 
 void main() {
-  T = uTime * uSpeed;
+  T = uPhase;
   vec3 ro = uCamPos;
   vec3 rd = cameraRay(gl_FragCoord.xy, uResolution, ro, uCamTarget, 45.0);
   float az = radians(uSunAzimuth), el = radians(uSunHeight);

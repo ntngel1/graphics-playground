@@ -3,10 +3,11 @@ import type { CameraSpec } from './types.ts'
 type V3 = [number, number, number]
 
 export interface Input {
-  mouse: { x: number; y: number; down: boolean } // x,y в 0..1 от канваса, y вверх
+  mouse: { x: number; y: number; down: boolean; alt: boolean } // x,y в 0..1 от канваса, y вверх; alt — Shift/правая кнопка
   camera: { enabled: boolean; pos: V3; target: V3 }
   setCamera(spec: CameraSpec | undefined, keepState: boolean): void
   onChange?: () => void // для перерисовки на паузе
+  onPointer?: (phase: 'down' | 'move' | 'up') => void // только для «кисти» (не вращения камеры)
   dispose(): void
 }
 
@@ -20,7 +21,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   let pinch = 0
 
   const input: Input = {
-    mouse: { x: 0.5, y: 0.5, down: false },
+    mouse: { x: 0.5, y: 0.5, down: false, alt: false },
     camera: { enabled: false, pos: [0, 0, 3], target: [0, 0, 0] },
     setCamera(s, keepState) {
       input.camera.enabled = !!s
@@ -68,6 +69,8 @@ export function createInput(canvas: HTMLCanvasElement): Input {
       painting = !input.camera.enabled || e.shiftKey
       if (pointers.size === 2) (pinch = pinchDist()), (painting = false)
       input.mouse.down = painting && pointers.size === 1
+      input.mouse.alt = e.shiftKey || e.button === 2
+      if (input.mouse.down) input.onPointer?.('down')
       input.onChange?.()
     }],
     ['pointermove', (e: PointerEvent) => {
@@ -85,7 +88,8 @@ export function createInput(canvas: HTMLCanvasElement): Input {
         }
         update()
       }
-      if (p) (p.x = e.clientX), (p.y = e.clientY)
+      if (p) (p.x = e.clientX), (p.y = e.clientY), (input.mouse.alt = e.shiftKey || (e.buttons & 2) !== 0)
+      if (input.mouse.down) input.onPointer?.('move')
       input.onChange?.()
     }],
     ['pointerup', (e: PointerEvent) => release(e)],
@@ -101,7 +105,8 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   const release = (e: PointerEvent) => {
     pointers.delete(e.pointerId)
     pinch = 0
-    if (pointers.size === 0) (input.mouse.down = false), (painting = false)
+    if (input.mouse.down) input.onPointer?.('up')
+    if (pointers.size === 0) (input.mouse.down = false), (painting = false), (input.mouse.alt = false)
     input.onChange?.()
   }
   for (const [t, f] of handlers) canvas.addEventListener(t, f as EventListener, { passive: false })
