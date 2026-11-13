@@ -87,7 +87,10 @@ export function createPipeline(glc: GLContext, exp: Experiment, overlay: Overlay
   })
 
   const sizeOf = (spec: BufferSpec, f: FrameState, ctx: ExperimentContext): [number, number] => {
-    if (spec.size) return spec.size
+    if (spec.size) {
+      const [w, h] = typeof spec.size === 'function' ? spec.size(ctx.params) : spec.size
+      return [Math.min(maxSize, Math.max(1, Math.round(w))), Math.min(maxSize, Math.max(1, Math.round(h)))]
+    }
     const s = typeof spec.scale === 'function' ? spec.scale(ctx.params) : (spec.scale ?? 1)
     const c = (v: number) => Math.min(maxSize, Math.max(1, Math.round(v * s)))
     return [c(f.width), c(f.height)]
@@ -122,6 +125,7 @@ export function createPipeline(glc: GLContext, exp: Experiment, overlay: Overlay
     prog.set('uTime', f.time)
     prog.set('uFrame', f.frame)
     prog.set('uResolution', [w, h])
+    prog.set('uScreen', [f.width, f.height])
     prog.set('uMouse', scaleMouse(f.mouse, w, h))
     prog.set('uMousePrev', scaleMouse(f.mousePrev, w, h))
     prog.set('uCamPos', f.camPos)

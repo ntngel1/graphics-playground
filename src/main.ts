@@ -2,7 +2,7 @@ import { Pane, type FolderApi } from 'tweakpane'
 import { createGL } from './core/gl.ts'
 import { onExperimentsUpdate, onShaderUpdate } from './core/hmr.ts'
 import { createInput } from './core/input.ts'
-import { createLoop } from './core/loop.ts'
+import { createLoop, type Loop } from './core/loop.ts'
 import { createOverlay } from './core/overlay.ts'
 import { createParams, decodeParams, defaults, encodeParams, type Params } from './core/params.ts'
 import { createPipeline, type Pipeline } from './core/pipeline.ts'
@@ -28,12 +28,14 @@ let screenshot = false
 let mousePrev: [number, number, number, number] = [0, 0, 0, 0]
 
 // ---------- Цикл ----------
-const loop = createLoop(canvas, (l, advance) => {
+const loop = createLoop(canvas, (l, advance) => frame(l, advance))
+function frame(l: Loop, advance: boolean) {
   if (!cur) return
   const m = input.mouse
   const mouse: [number, number, number, number] = [m.x * l.width, m.y * l.height, m.down ? 1 : 0, m.alt ? 1 : 0]
-  // в первый кадр нажатия отрезок кисти вырождается в точку
-  if (mouse[2] && !mousePrev[2]) mousePrev = [mouse[0], mouse[1], 0, mousePrev[3]]
+  // в первый кадр нажатия отрезок кисти начинается из точки нажатия (а не из прошлого положения;
+  // и не теряется, если до кадра успело прийти несколько pointermove)
+  if (mouse[2] && !mousePrev[2]) mousePrev = [m.px * l.width, m.py * l.height, 0, mousePrev[3]]
   cur.pipeline.render(
     {
       time: l.time,
@@ -62,7 +64,7 @@ const loop = createLoop(canvas, (l, advance) => {
       setTimeout(() => URL.revokeObjectURL(a.href), 1000)
     })
   }
-})
+}
 input.onChange = () => loop.paused && loop.requestRedraw()
 input.onPointer = (phase) =>
   cur?.exp.onPointer?.({ uv: [input.mouse.x, input.mouse.y], phase, shift: input.mouse.alt }, ctx)
@@ -109,6 +111,16 @@ general.addButton({ title: 'screenshot [S]' }).on('click', takeScreenshot)
 function takeScreenshot() {
   screenshot = true
   loop.requestRedraw()
+}
+
+// Режим перетаскивания в экспериментах с камерой: вращение или кисть по поверхности.
+const inputMode = {
+  get mode() {
+    return input.brushMode ? 'brush' : 'camera'
+  },
+  set mode(v: string) {
+    input.brushMode = v === 'brush'
+  },
 }
 
 // ---------- URL ----------
@@ -159,7 +171,17 @@ function load(id: string, values: ParamValues, keepState = false) {
     const sel = { preset: '' }
     folder
       .addBinding(sel, 'preset', { options: { '—': '', ...Object.fromEntries(Object.keys(presets).map((k) => [k, k])) } })
-      .on('change', (e) => e.value && ctx.set({ ...defaults(exp.params ?? {}), ...presets[e.value] }))
+      .on('change', (e) => {
+        if (!e.value) return
+        ctx.set({ ...defaults(exp.params ?? {}), ...presets[e.value] })
+        exp.onPreset?.(e.value, ctx)
+      })
+  }
+  if (exp.camera) {
+    if (!keepState) input.brushMode = false
+    folder
+      .addBinding(inputMode, 'mode', { label: 'drag [D]', options: { camera: 'camera', brush: 'brush' } })
+      .on('change', (e) => (input.brushMode = e.value === 'brush'))
   }
   params.bind(folder, () => ctx, paramsChanged)
 
@@ -197,7 +219,22 @@ onExperimentsUpdate((next) => {
 })
 
 // Отладочный доступ из консоли / e2e (только dev)
-if (import.meta.env.DEV) Object.assign(window, { __gp: { glc, loop, ctx, get cur() { return cur } } })
+if (import.meta.env.DEV) {
+  // bench(n): n синхронных кадров (с ожиданием GPU через readPixels) → мс на кадр
+  const bench = (n: number) => {
+    const { gl } = glc
+    const px = new Uint8Array(4)
+    frame(loop, true)
+    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    const t0 = performance.now()
+    for (let i = 0; i < n; i++) {
+      frame(loop, true)
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px)
+    }
+    return (performance.now() - t0) / n
+  }
+  Object.assign(window, { __gp: { glc, loop, ctx, input, bench, get cur() { return cur } } })
+}
 
 // ---------- Клавиши ----------
 addEventListener('keydown', (e) => {
@@ -213,6 +250,11 @@ addEventListener('keydown', (e) => {
       break
     case 'KeyR':
       reset()
+      break
+    case 'KeyD':
+      if (!cur?.exp.camera) return
+      input.brushMode = !input.brushMode
+      pane.refresh()
       break
     case 'KeyH':
       document.body.classList.toggle('gp-hide-ui')

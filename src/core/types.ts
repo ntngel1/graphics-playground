@@ -29,7 +29,7 @@ export type ParamValues = Record<string, ParamValue>
 // Именованные offscreen-буферы (Experiment.buffers), в которые пишут проходы с target: '<имя>'.
 //
 // Конвенции юниформов в проходе:
-//  - uResolution — размер ТЕКУЩЕГО таргета в px (буфера или экрана);
+//  - uResolution — размер ТЕКУЩЕГО таргета в px (буфера или экрана); uScreen — размер канваса в px;
 //  - uMouse / uMousePrev (vec4) — в px текущего таргета, y вверх: uMouse.xy / uResolution — uv
 //    в любом проходе. z — кнопка зажата, w — модификатор (Shift или правая кнопка).
 //    uMousePrev — значение на прошлом кадре; в первый кадр нажатия xy совпадает с uMouse;
@@ -44,7 +44,7 @@ export type ParamValues = Record<string, ParamValue>
 export interface BufferSpec {
   // доля от размера канваса (по умолчанию 1); функция — от параметров (разрешение симуляции)
   scale?: number | ((p: ParamValues) => number)
-  size?: [number, number] // фиксированный размер в px, приоритетнее scale
+  size?: [number, number] | ((p: ParamValues) => [number, number]) // фиксированный размер в px, приоритетнее scale
   format?: 'rgba8' | 'rgba16f' | 'rgba32f' // по умолчанию rgba16f
   filter?: 'linear' | 'nearest' // по умолчанию nearest
   wrap?: 'clamp' | 'repeat' | 'mirror' // по умолчанию clamp
@@ -86,6 +86,7 @@ export interface Experiment {
   renderScale?: number // масштаб рендера по умолчанию
   // Нажатие/перетаскивание по канвасу (uv 0..1, y вверх). Вызывается в дополнение к uMouse.
   onPointer?: (e: PointerInfo, ctx: ExperimentContext) => void
+  onPreset?: (name: string, ctx: ExperimentContext) => void // после применения пресета из панели
 }
 
 export interface PointerInfo {

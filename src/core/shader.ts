@@ -32,6 +32,7 @@ precision highp int;
 precision highp sampler2D;
 uniform float uTime;
 uniform vec2 uResolution;
+uniform vec2 uScreen;
 uniform vec4 uMouse;
 uniform vec4 uMousePrev;
 uniform int uFrame;

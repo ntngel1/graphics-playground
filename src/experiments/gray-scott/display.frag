@@ -1,34 +1,22 @@
 // Отображение состояния: палитры, «рельеф» (освещение по градиенту V как карте высот),
-// маркер текущей точки в режиме карты feed/kill.
-#include <palette>
+// в режиме карты — изолинии feed/kill и маркер текущей точки.
+#include "colorize.glsl"
+#include "map.glsl"
 
 uniform sampler2D uState;
 uniform vec2 uStateSize;
-uniform int uPalette;       // ink, sunset, ocean, rainbow, heat, neon
+uniform int uPalette;
 uniform bool uRelief;
 uniform float uReliefDepth;
 uniform bool uMapMode;
 uniform float uFeed;
 uniform float uKill;
-uniform vec2 uMapKill;
-uniform vec2 uMapFeed;
 
 float V(vec2 uv) { return texture(uState, uv).g; }
 
-vec3 colorize(float v) {
-  float t = smoothstep(0.02, 0.4, v);
-  if (uPalette == 0) return mix(vec3(0.94, 0.92, 0.87), vec3(0.06, 0.06, 0.09), smoothstep(0.12, 0.3, v));
-  if (uPalette == 1) return palSunset(t);
-  if (uPalette == 2) return palOcean(t);
-  if (uPalette == 3) return palRainbow(0.7 * t + 0.6) * smoothstep(0.0, 0.3, t);
-  if (uPalette == 4) return palHeat(t) * smoothstep(0.0, 0.15, t);
-  return vec3(0.1, 0.9, 1.0) * pow(t, 1.5) * 1.4 + vec3(1.0, 0.2, 0.7) * smoothstep(0.6, 1.0, t) * 0.5;
-}
-
 void main() {
   vec2 uv = vUv;
-  float v = V(uv);
-  vec3 col = colorize(v);
+  vec3 col = gsColor(V(uv), uPalette);
 
   if (uRelief) {
     vec2 tx = 1.0 / uStateSize;
@@ -42,17 +30,16 @@ void main() {
   }
 
   if (uMapMode) {
-    // сетка: kill через 0.005, feed через 0.01
-    vec2 g = vec2((mix(uMapKill.x, uMapKill.y, uv.x)) / 0.005, (mix(uMapFeed.x, uMapFeed.y, uv.y)) / 0.01);
+    // изолинии: kill через 0.0025 (кривые), feed через 0.01
+    vec2 fk = mapToFK(uv);
+    vec2 g = vec2(fk.y / 0.0025, fk.x / 0.01);
     vec2 w = fwidth(g);
     vec2 line = 1.0 - smoothstep(vec2(0.0), w * 1.5, abs(fract(g + 0.5) - 0.5));
-    col = mix(col, vec3(1.0), 0.18 * max(line.x, line.y));
-    vec2 m = vec2((uKill - uMapKill.x) / (uMapKill.y - uMapKill.x), (uFeed - uMapFeed.x) / (uMapFeed.y - uMapFeed.x));
+    col = mix(col, vec3(1.0), 0.16 * max(line.x, line.y));
+    vec2 m = fkToMap(vec2(uFeed, uKill));
     float d = length((uv - m) * uResolution) / uResolution.y;
-    float ring = smoothstep(0.004, 0.0, abs(d - 0.018));
-    float ringO = smoothstep(0.008, 0.0, abs(d - 0.018));
-    col = mix(col, vec3(0.0), ringO * 0.8);
-    col = mix(col, vec3(1.0), ring);
+    col = mix(col, vec3(0.0), smoothstep(0.008, 0.0, abs(d - 0.018)) * 0.8);
+    col = mix(col, vec3(1.0), smoothstep(0.004, 0.0, abs(d - 0.018)));
   }
   fragColor = vec4(col, 1.0);
 }

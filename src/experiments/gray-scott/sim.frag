@@ -1,5 +1,10 @@
-// Шаг Грея-Скотта: R = U, G = V. Лапласиан 9-точечный (веса Карла Симса: 0.2 / 0.05 / -1),
-// wrap repeat задаётся буфером. Кисть рисует отрезок uMousePrev → uMouse.
+// Шаг Грея-Скотта: R = U, G = V. Лапласиан 9-точечный (веса Карла Симса: 0.2 / 0.05 / -1).
+// Края: wrap repeat буфера; в режиме карты — clamp (соседи зажимаются), чтобы не было швов.
+// Кисть — отрезок prev → cur с учётом периодичности (через шов рисуется коротким путём).
+// Источник кисти: экран (uMouse/uMousePrev) или 1×1 текстура uPick: rg — uv сейчас, ba — uv
+// на прошлом кадре, x < 0 — нет попадания.
+#include "map.glsl"
+
 uniform sampler2D uState;
 uniform vec2 uStateSize;
 uniform float uFeed;
@@ -7,15 +12,19 @@ uniform float uKill;
 uniform float uDu;
 uniform float uDv;
 uniform float uDt;
-uniform float uBrushSize;     // доля высоты
+uniform float uBrushSize;     // доля высоты буфера
 uniform float uBrushStrength;
 uniform bool uEraser;
-uniform bool uMapMode;        // feed/kill по осям: kill — X, feed — Y
-uniform vec2 uMapKill;        // диапазоны карты (из sim.ts)
-uniform vec2 uMapFeed;
+uniform bool uMapMode;
+uniform bool uBrushPick;
+uniform sampler2D uPick;
 
-float segDist(vec2 p, vec2 a, vec2 b) {
-  vec2 pa = p - a, ba = b - a;
+// расстояние в px до отрезка A→B на торе размера sz (отрезок короче половины периода)
+float segDistWrapped(vec2 p, vec2 a, vec2 b, vec2 sz) {
+  vec2 ba = b - a;
+  ba -= sz * round(ba / sz);
+  vec2 pa = p - a;
+  pa -= sz * round((pa - 0.5 * ba) / sz);
   float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
   return length(pa - ba * h);
 }
@@ -23,7 +32,8 @@ float segDist(vec2 p, vec2 a, vec2 b) {
 void main() {
   vec2 tx = 1.0 / uStateSize;
   vec2 uv = gl_FragCoord.xy * tx;
-  #define S(dx, dy) texture(uState, uv + vec2(dx, dy) * tx).rg
+  vec2 lo = 0.5 * tx, hi = 1.0 - 0.5 * tx;
+  #define S(dx, dy) texture(uState, uMapMode ? clamp(uv + vec2(dx, dy) * tx, lo, hi) : uv + vec2(dx, dy) * tx).rg
   vec2 c = S(0, 0);
   vec2 lap = -c
     + 0.20 * (S(1, 0) + S(-1, 0) + S(0, 1) + S(0, -1))
@@ -32,16 +42,25 @@ void main() {
 
   float F = uFeed, K = uKill;
   if (uMapMode) {
-    K = mix(uMapKill.x, uMapKill.y, uv.x);
-    F = mix(uMapFeed.x, uMapFeed.y, uv.y);
+    vec2 fk = mapToFK(uv);
+    F = fk.x;
+    K = fk.y;
   }
   float u = c.x, v = c.y, uvv = u * v * v;
   u += uDt * (uDu * lap.x - uvv + F * (1.0 - u));
   v += uDt * (uDv * lap.y + uvv - (F + K) * v);
 
-  if (uMouse.z > 0.5 && !uMapMode) {
+  bool draw = uMouse.z > 0.5 && !uMapMode;
+  vec2 a = uMousePrev.xy, b = uMouse.xy;
+  if (uBrushPick) {
+    vec4 pk = texture(uPick, vec2(0.5));
+    draw = draw && pk.x >= 0.0;
+    b = pk.xy * uStateSize;
+    a = (pk.z >= 0.0 ? pk.zw : pk.xy) * uStateSize;
+  }
+  if (draw) {
     float r = max(uBrushSize * uResolution.y, 1.0);
-    float m = (1.0 - smoothstep(r * 0.5, r, segDist(gl_FragCoord.xy, uMousePrev.xy, uMouse.xy))) * uBrushStrength;
+    float m = (1.0 - smoothstep(r * 0.5, r, segDistWrapped(gl_FragCoord.xy, a, b, uStateSize))) * uBrushStrength;
     if (uEraser || uMouse.w > 0.5) { u = mix(u, 1.0, m); v = mix(v, 0.0, m); }
     else { u = mix(u, 0.5, m); v = mix(v, 0.25, m); }
   }

@@ -3,11 +3,13 @@ import type { CameraSpec } from './types.ts'
 type V3 = [number, number, number]
 
 export interface Input {
-  mouse: { x: number; y: number; down: boolean; alt: boolean } // x,y в 0..1 от канваса, y вверх; alt — Shift/правая кнопка
+  // x,y в 0..1 от канваса, y вверх; alt — Shift/правая кнопка; px,py — точка нажатия (начало первого отрезка кисти)
+  mouse: { x: number; y: number; px: number; py: number; down: boolean; alt: boolean }
   camera: { enabled: boolean; pos: V3; target: V3 }
   setCamera(spec: CameraSpec | undefined, keepState: boolean): void
   onChange?: () => void // для перерисовки на паузе
   onPointer?: (phase: 'down' | 'move' | 'up') => void // только для «кисти» (не вращения камеры)
+  brushMode: boolean // при включённой камере: true — одиночное перетаскивание рисует (Shift+drag — всегда)
   dispose(): void
 }
 
@@ -21,7 +23,8 @@ export function createInput(canvas: HTMLCanvasElement): Input {
   let pinch = 0
 
   const input: Input = {
-    mouse: { x: 0.5, y: 0.5, down: false, alt: false },
+    mouse: { x: 0.5, y: 0.5, px: 0.5, py: 0.5, down: false, alt: false },
+    brushMode: false,
     camera: { enabled: false, pos: [0, 0, 3], target: [0, 0, 0] },
     setCamera(s, keepState) {
       input.camera.enabled = !!s
@@ -66,10 +69,13 @@ export function createInput(canvas: HTMLCanvasElement): Input {
       canvas.setPointerCapture(e.pointerId)
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
       setMouse(e)
-      painting = !input.camera.enabled || e.shiftKey
+      input.mouse.px = input.mouse.x
+      input.mouse.py = input.mouse.y
+      painting = !input.camera.enabled || input.brushMode || e.shiftKey
       if (pointers.size === 2) (pinch = pinchDist()), (painting = false)
       input.mouse.down = painting && pointers.size === 1
-      input.mouse.alt = e.shiftKey || e.button === 2
+      // Shift в 3D — это «рисовать», а не модификатор; стирание там — правая кнопка или параметр
+      input.mouse.alt = (e.shiftKey && !input.camera.enabled) || e.button === 2
       if (input.mouse.down) input.onPointer?.('down')
       input.onChange?.()
     }],
@@ -88,7 +94,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
         }
         update()
       }
-      if (p) (p.x = e.clientX), (p.y = e.clientY), (input.mouse.alt = e.shiftKey || (e.buttons & 2) !== 0)
+      if (p) (p.x = e.clientX), (p.y = e.clientY), (input.mouse.alt = (e.shiftKey && !input.camera.enabled) || (e.buttons & 2) !== 0)
       if (input.mouse.down) input.onPointer?.('move')
       input.onChange?.()
     }],
