@@ -97,6 +97,16 @@ const ctx: ExperimentContext = {
   get camera() {
     return input.camera
   },
+  read(name) {
+    const b = cur?.pipeline.buffer(name)
+    if (!b || b.format === 'rgba8') return null
+    const { gl } = glc
+    const px = new Float32Array(b.width * b.height * 4)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, b.read.fb)
+    gl.readPixels(0, 0, b.width, b.height, gl.RGBA, gl.FLOAT, px)
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null)
+    return px
+  },
   get time() {
     return loop.time
   },
@@ -242,6 +252,7 @@ function load(id: string, values: ParamValues, keepState = false) {
   input.setCamera(exp.camera, keepState)
   if (!keepState) {
     loop.scale = exp.renderScale ?? 1 // масштаб — свойство эксперимента (тяжёлым — меньше)
+    if (exp.paneCollapsed) pane.expanded = false
     loop.resize()
     reset()
   }
@@ -303,7 +314,16 @@ if (import.meta.env.DEV) {
     }
     return (performance.now() - t0) / n
   }
-  Object.assign(window, { __gp: { glc, loop, ctx, input, bench, get cur() { return cur } } })
+  // step(n): n кадров синхронно с фиксированным dt = 1/60 (детерминированные прогоны; ставьте loop.paused = true)
+  const step = (n: number) => {
+    for (let i = 0; i < n; i++) {
+      loop.dt = 1 / 60
+      frame(loop, true)
+      loop.time += 1 / 60
+      loop.frame++
+    }
+  }
+  Object.assign(window, { __gp: { glc, loop, ctx, input, bench, step, get cur() { return cur } } })
 }
 
 // ---------- Клавиши ----------

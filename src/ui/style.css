@@ -215,3 +215,41 @@ body:has(.gp-exp-ui) .gp-hints { bottom: auto; top: max(8px, env(safe-area-inset
 .pt-modes button:hover { background: rgba(255, 255, 255, 0.06); }
 .pt-modes button.on { border-color: #8a90ad; background: rgba(255, 255, 255, 0.1); color: #fff; }
 @media (pointer: coarse) { .pt-modes button { min-width: 72px; padding: 14px 10px; font-size: 15px; } }
+
+/* ---------- Plasticine (knobs) ---------- */
+.kn-ui { font: 14px/1.35 system-ui, -apple-system, sans-serif; color: #2b2a28; }
+.kn-top {
+  position: fixed; left: 50%; top: max(10px, env(safe-area-inset-top)); transform: translateX(-50%);
+  max-width: min(640px, calc(100vw - 24px)); text-align: center;
+  background: rgba(250, 247, 240, 0.85); border-radius: 10px; padding: 8px 14px; backdrop-filter: blur(6px);
+}
+.kn-title { display: block; font-size: 15px; }
+.kn-hint { display: block; color: #5d5a55; font-size: 13px; }
+.kn-bottom {
+  position: fixed; left: 50%; bottom: max(10px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+  width: min(720px, calc(100vw - 16px)); display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap;
+  background: rgba(250, 247, 240, 0.88); border-radius: 12px; padding: 10px 12px; backdrop-filter: blur(6px);
+  box-sizing: border-box;
+}
+.kn-knob { flex: 1 1 220px; display: flex; flex-direction: column; gap: 4px; }
+.kn-knob[hidden] { display: none; }
+.kn-knob span b { font-size: 15px; }
+.kn-knob span i { font-style: normal; color: #6d6a65; font-size: 12px; margin-left: 6px; }
+.kn-a b { color: #c4610f; } .kn-b b { color: #2f68c4; }
+.kn-knob input { width: 100%; height: 34px; margin: 0; touch-action: none; }
+.kn-a input { accent-color: #e07a2a; } .kn-b input { accent-color: #3f7ee0; }
+.kn-buttons { display: flex; gap: 6px; align-items: center; }
+.kn-ui button, .kn-ui select {
+  font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid #c9c2b6; background: #fff; color: #2b2a28; cursor: pointer;
+}
+.kn-go { background: #2b2a28 !important; color: #fff !important; border-color: #2b2a28 !important; }
+.kn-go[disabled] { opacity: 0.35; cursor: default; }
+.kn-win {
+  position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%);
+  background: rgba(250, 247, 240, 0.95); border-radius: 14px; padding: 18px 24px; display: flex; gap: 16px; align-items: center;
+  font-size: 20px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+}
+.kn-win[hidden] { display: none; }
+@media (pointer: coarse) { .kn-knob input { height: 44px; } .kn-ui button, .kn-ui select { padding: 12px 16px; } }
+body:has(.kn-ui) .gp-hints { display: none; }
+@media (max-width: 640px) { .kn-top { top: calc(max(10px, env(safe-area-inset-top)) + 46px); } }

@@ -18,6 +18,7 @@ const SETUP = {
   'living-surface': { query: 'steps=24', warm: 14000 },
   'gray-scott': { query: 'steps=24', warm: 10000 },
   phototroph: { query: 'steps=24&sunAzimuth=60', warm: 12000 },
+  knobs: { query: 'level=hatch&knobA=0.41&knobB=0.9', warm: 2500 },
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 

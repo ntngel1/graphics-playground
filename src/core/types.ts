@@ -97,6 +97,7 @@ export interface Experiment {
   // режимы перетаскивания для экспериментов с camera (селектор `drag [D]`, D листает по кругу);
   // по умолчанию ['camera', 'brush']. Всё, кроме 'camera', приходит как «рисование» (uMouse.z, onPointer).
   dragModes?: string[]
+  paneCollapsed?: boolean // панель настроек свёрнута при открытии (у игр своя UI)
 }
 
 export interface PointerInfo {
@@ -117,6 +118,7 @@ export interface ExperimentContext {
   dt: number // с, длительность кадра; 0 на паузе — для накопления фазы в Pass.uniforms
   dragMode: string // текущий режим перетаскивания (запись меняет режим; событие 'gp-dragmode' на window)
   readonly camera: { pos: [number, number, number]; target: [number, number, number] }
+  read(buffer: string): Float32Array | null // readPixels float-буфера (маленьких! синхронно ждёт GPU)
 }
 
 export const defineExperiment = <T extends Experiment>(e: T): T => e
