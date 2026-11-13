@@ -1,0 +1,80 @@
+import type { ShaderSource } from './shader.ts'
+
+// ---------- Параметры ----------
+// Имя ключа `feed` → юниформ `uFeed` (можно переопределить через `uniform`, false — без юниформа).
+interface ParamBase {
+  label?: string
+  uniform?: string | false
+  folder?: string // группа в панели
+}
+export interface NumberParam extends ParamBase { value: number; min?: number; max?: number; step?: number }
+export interface BoolParam extends ParamBase { value: boolean }
+export interface ColorParam extends ParamBase { value: `#${string}` } // → vec3 (0..1)
+export interface Vec2Param extends ParamBase { value: [number, number]; min?: number; max?: number; step?: number }
+export interface Vec3Param extends ParamBase { value: [number, number, number]; min?: number; max?: number; step?: number }
+// Юниформ получает число: значение опции, а для строковых опций — её индекс.
+export interface SelectParam extends ParamBase {
+  value: string | number
+  options: readonly (string | number)[] | Record<string, string | number>
+}
+export interface ButtonParam extends ParamBase { action: (ctx: ExperimentContext) => void }
+
+export type ParamDef = NumberParam | BoolParam | ColorParam | Vec2Param | Vec3Param | SelectParam | ButtonParam
+export type ParamSchema = Record<string, ParamDef>
+export type ParamValue = number | boolean | string | number[]
+export type ParamValues = Record<string, ParamValue>
+
+// ---------- Буферы и проходы ----------
+// Шаг 3: именованные offscreen-буферы. Сейчас поддерживается только target: 'screen'.
+export interface BufferSpec {
+  scale?: number // доля от размера экрана (по умолчанию 1)
+  size?: [number, number] // фиксированный размер в px, приоритетнее scale
+  format?: 'rgba8' | 'rgba16f' | 'rgba32f'
+  filter?: 'linear' | 'nearest'
+  wrap?: 'clamp' | 'repeat' | 'mirror'
+  pingPong?: boolean // два текстурных слота; чтение из буфера внутри его же прохода даёт прошлое состояние
+  init?: ShaderSource // проход инициализации (при создании и по R)
+}
+
+export interface Pass {
+  name?: string
+  frag: ShaderSource
+  target?: 'screen' | (string & {}) // имя из Experiment.buffers; по умолчанию 'screen'
+  inputs?: Record<string, string> // sampler-юниформ → имя буфера, напр. { uState: 'state' }
+  iterations?: number | ((p: ParamValues) => number) // прогонов за кадр (для симуляций)
+  enabled?: (p: ParamValues) => boolean
+  uniforms?: (ctx: ExperimentContext) => Record<string, ParamValue> // доп. юниформы прохода
+}
+
+// ---------- Камера ----------
+export interface CameraSpec {
+  target?: [number, number, number]
+  distance?: number
+  yaw?: number // рад
+  pitch?: number // рад
+  minDistance?: number
+  maxDistance?: number
+}
+
+// ---------- Эксперимент ----------
+export interface Experiment {
+  name: string
+  description?: string
+  params?: ParamSchema
+  passes: Pass[]
+  buffers?: Record<string, BufferSpec>
+  camera?: CameraSpec // включает орбитальную камеру (мышь перестаёт быть «кистью»)
+  presets?: Record<string, ParamValues>
+  renderScale?: number // масштаб рендера по умолчанию
+}
+
+// То, что доступно кнопкам и колбэкам проходов.
+export interface ExperimentContext {
+  params: ParamValues
+  set(values: ParamValues): void
+  reset(): void
+  time: number
+  frame: number
+}
+
+export const defineExperiment = <T extends Experiment>(e: T): T => e
