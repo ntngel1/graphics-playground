@@ -5,6 +5,7 @@
 // Источник кисти: экран (uMouse/uMousePrev) или 1×1 текстура uPick: rg — uv сейчас, ba — uv
 // на прошлом кадре, x < 0 — нет попадания.
 #include "map.glsl"
+#include <noise>
 
 uniform sampler2D uState;
 uniform vec2 uStateSize;
@@ -19,6 +20,18 @@ uniform bool uEraser;
 uniform bool uMapMode;
 uniform bool uBrushPick;
 uniform sampler2D uPick;
+
+// Свет как корм (phototroph, опция light в createGrayScott). uLight.r — освещённость 0..1 (тень+рассеянный).
+// В тени F падает (уходит из жизнеспособной области) и V дополнительно распадается; биомасса B (канал B)
+// копится там, где живое на свету, и медленно распадается — остаётся «скелетом» после смерти.
+uniform bool uLightMode;
+uniform sampler2D uLight;
+uniform float uLightFeed;   // доля F, зависящая от света (0 — свет не влияет)
+uniform float uDarkKill;    // доп. распад V в темноте
+uniform float uGrowth;      // скорость накопления биомассы
+uniform float uDecay;       // распад биомассы
+uniform float uSpores;      // частота спор на освещённой голой поверхности
+uniform int uSteps;
 
 // расстояние в px до отрезка A→B на торе размера sz (отрезок короче половины периода)
 float segDistWrapped(vec2 p, vec2 a, vec2 b, vec2 sz) {
@@ -47,9 +60,27 @@ void main() {
     F = fk.x;
     K = fk.y;
   }
+  float L = 1.0;
+  if (uLightMode) {
+    L = texture(uLight, uv).r;
+    F *= 1.0 - uLightFeed * (1.0 - L);
+  }
   float u = 1.0 - c.x, v = c.y, uvv = u * v * v;
   u += uDt * (-uDu * lap.x - uvv + F * (1.0 - u)); // лапласиан (1 − U) = −лапласиан U
   v += uDt * (uDv * lap.y + uvv - (F + K) * v);
+
+  float bio = 0.0;
+  if (uLightMode) {
+    v -= uDt * uDarkKill * (1.0 - L) * v;
+    vec4 st = texture(uState, uv);
+    // растёт только плотное живое (порог по V), иначе B — размытая копия V, а не история колонии
+    bio = st.b + uDt * (uGrowth * smoothstep(0.1, 0.3, v) * L - uDecay * st.b);
+    // споры: редкие пятна 5×5 на освещённой голой поверхности (возрождение вымершей колонии)
+    uint step = uint(uFrame) * uint(max(uSteps, 1)) + uint(uIteration);
+    uvec2 cell = uvec2(gl_FragCoord.xy) / 5u;
+    float r = float(pcg3d(uvec3(cell, step)).x) / 4294967296.0;
+    if (v < 0.02 && r < uSpores * 1e-7 * L * L) { u = 0.5; v = 0.25; }
+  }
 
   bool draw = uMouse.z > 0.5 && !uMapMode;
   vec2 a = uMousePrev.xy, b = uMouse.xy;
@@ -65,5 +96,5 @@ void main() {
     if (uEraser || uMouse.w > 0.5) { u = mix(u, 1.0, m); v = mix(v, 0.0, m); }
     else { u = mix(u, 0.5, m); v = mix(v, 0.25, m); }
   }
-  fragColor = vec4(clamp(1.0 - u, 0.0, 1.0), clamp(v, 0.0, 1.0), 0.0, 1.0);
+  fragColor = vec4(clamp(1.0 - u, 0.0, 1.0), clamp(v, 0.0, 1.0), clamp(bio, 0.0, 1.0), 1.0);
 }

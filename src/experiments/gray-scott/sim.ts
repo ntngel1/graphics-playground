@@ -17,6 +17,9 @@ export interface GrayScottOptions {
   // по умолчанию кисть рисует по экрану (uMouse/uMousePrev)
   pick?: string
   mapMode?: boolean // режим карты feed/kill (по умолчанию true)
+  // имя буфера освещённости (r — свет 0..1 в uv состояния): свет кормит колонию, канал B — биомасса.
+  // Добавляет параметры lightFeed/darkKill/growth/decay/spores.
+  light?: string
 }
 
 // Карта feed/kill (то же отображение, что в map.glsl): Y — feed, X — сдвиг kill от k_sn(F),
@@ -73,6 +76,13 @@ export function createGrayScott(opts: GrayScottOptions = {}) {
     brushSize: { label: 'brush size', value: 0.02, min: 0.003, max: 0.1, step: 0.001, folder: 'brush' },
     brushStrength: { label: 'brush strength', value: 1, min: 0, max: 1, step: 0.01, folder: 'brush' },
     eraser: { label: fixed || opts.pick ? 'eraser' : 'eraser [shift]', value: false, folder: 'brush' },
+    ...(opts.light && {
+      lightFeed: { label: 'light → feed', value: 0.8, min: 0, max: 1, step: 0.01, folder: 'metabolism' },
+      darkKill: { label: 'dark decay', value: 0.005, min: 0, max: 0.1, step: 0.001, folder: 'metabolism' },
+      growth: { label: 'biomass growth', value: 0.0002, min: 0, max: 0.002, step: 0.00001, folder: 'metabolism' },
+      decay: { label: 'biomass decay', value: 0.00002, min: 0, max: 0.0005, step: 0.000005, folder: 'metabolism' },
+      spores: { value: 5, min: 0, max: 20, step: 0.1, folder: 'metabolism' },
+    }),
   }
 
   const buffers: Record<string, BufferSpec> = {
@@ -93,9 +103,9 @@ export function createGrayScott(opts: GrayScottOptions = {}) {
       name: 'gray-scott',
       frag: simFrag,
       target: 'state',
-      inputs: { uState: 'state', ...(opts.pick && { uPick: opts.pick }) },
+      inputs: { uState: 'state', ...(opts.pick && { uPick: opts.pick }), ...(opts.light && { uLight: opts.light }) },
       iterations: (p) => p.steps as number,
-      uniforms: () => ({ ...mapUniforms(), uBrushPick: !!opts.pick }),
+      uniforms: (ctx) => ({ ...mapUniforms(), uBrushPick: !!opts.pick, uLightMode: !!opts.light, uSteps: ctx.params.steps as number }),
     },
   ]
 

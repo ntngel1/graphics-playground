@@ -70,7 +70,7 @@ function frame(l: Loop, advance: boolean) {
 }
 input.onChange = () => loop.paused && loop.requestRedraw()
 input.onPointer = (phase) =>
-  cur?.exp.onPointer?.({ uv: [input.mouse.x, input.mouse.y], phase, shift: input.mouse.alt }, ctx)
+  cur?.exp.onPointer?.({ uv: [input.mouse.x, input.mouse.y], phase, shift: input.mouse.alt, size: [canvas.clientWidth, canvas.clientHeight] }, ctx)
 
 const ctx: ExperimentContext = {
   get params() {
@@ -87,6 +87,15 @@ const ctx: ExperimentContext = {
   },
   get dt() {
     return loop.dt
+  },
+  get dragMode() {
+    return input.dragMode
+  },
+  set dragMode(v) {
+    setDragMode(v)
+  },
+  get camera() {
+    return input.camera
   },
   get time() {
     return loop.time
@@ -135,22 +144,32 @@ async function copyLink() {
 // строка-подсказка в углу (прячется вместе с UI по H); на тач-устройствах — только «галерея»
 const hints = document.createElement('div')
 hints.className = 'gp-hints'
-hints.innerHTML = `<a href="#">← gallery</a>${coarse ? '' : '<span> · space pause · S shot · R reset · H hide UI · G gallery · D brush/camera</span>'}`
 document.body.append(hints)
+const renderHints = (exp: Experiment) => {
+  const d = exp.camera ? ` · D ${dragModes().join('/')}` : ''
+  hints.innerHTML = `<a href="#">← gallery</a>${coarse ? '' : `<span> · space pause · S shot · R reset · H hide UI · G gallery${d}</span>`}`
+}
 
 function takeScreenshot() {
   screenshot = true
   loop.requestRedraw()
 }
 
-// Режим перетаскивания в экспериментах с камерой: вращение или кисть по поверхности.
+// Режим перетаскивания в экспериментах с камерой: вращение, кисть или свои режимы эксперимента.
 const inputMode = {
   get mode() {
-    return input.brushMode ? 'brush' : 'camera'
+    return input.dragMode
   },
   set mode(v: string) {
-    input.brushMode = v === 'brush'
+    setDragMode(v)
   },
+}
+const dragModes = () => cur?.exp.dragModes ?? ['camera', 'brush']
+function setDragMode(v: string) {
+  if (input.dragMode === v) return
+  input.dragMode = v
+  pane.refresh()
+  dispatchEvent(new CustomEvent('gp-dragmode', { detail: v }))
 }
 
 // ---------- URL ----------
@@ -208,10 +227,8 @@ function load(id: string, values: ParamValues, keepState = false) {
       })
   }
   if (exp.camera) {
-    if (!keepState) input.brushMode = false
-    folder
-      .addBinding(inputMode, 'mode', { label: 'drag [D]', options: { camera: 'camera', brush: 'brush' } })
-      .on('change', (e) => (input.brushMode = e.value === 'brush'))
+    if (!keepState || !dragModes().includes(input.dragMode)) input.dragMode = 'camera'
+    folder.addBinding(inputMode, 'mode', { label: 'drag [D]', options: Object.fromEntries(dragModes().map((m) => [m, m])) })
   }
   params.bind(folder, () => ctx, paramsChanged)
 
@@ -230,6 +247,7 @@ function load(id: string, values: ParamValues, keepState = false) {
   }
   pane.refresh()
   loop.requestRedraw()
+  renderHints(exp)
   document.title = `${exp.name} · playground`
 }
 
@@ -305,8 +323,7 @@ addEventListener('keydown', (e) => {
       break
     case 'KeyD':
       if (!cur?.exp.camera) return
-      input.brushMode = !input.brushMode
-      pane.refresh()
+      setDragMode(dragModes()[(dragModes().indexOf(input.dragMode) + 1) % dragModes().length])
       break
     case 'KeyG':
       location.hash = ''

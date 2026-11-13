@@ -184,4 +184,34 @@ html, body {
   .sb-palette button { min-width: 60px; padding: 8px 4px 6px; }
   .sb-palette button i { width: 30px; height: 30px; }
 }
-body:has(.sb-palette) .gp-hints { bottom: calc(max(8px, env(safe-area-inset-bottom)) + 74px); }
+/* у экспериментов со своей нижней панелью подсказки — в левом верхнем углу (не налезают на палитру) */
+body:has(.gp-exp-ui) .gp-hints { bottom: auto; top: max(8px, env(safe-area-inset-top)); max-width: calc(100vw - 310px); }
+@media (max-width: 640px) { body:has(.gp-exp-ui) .gp-hints { max-width: none; top: auto; bottom: calc(max(8px, env(safe-area-inset-bottom)) + 84px); } }
+
+/* ---------- режимы перетаскивания phototroph ---------- */
+.pt-modes {
+  position: fixed;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  padding: 5px;
+  background: rgba(14, 15, 20, 0.82);
+  border: 1px solid #2a2c36;
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+}
+.pt-modes button {
+  min-width: 64px;
+  padding: 8px 10px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: #aaa;
+  font: 13px/1 system-ui, sans-serif;
+  cursor: pointer;
+}
+.pt-modes button:hover { background: rgba(255, 255, 255, 0.06); }
+.pt-modes button.on { border-color: #8a90ad; background: rgba(255, 255, 255, 0.1); color: #fff; }
+@media (pointer: coarse) { .pt-modes button { min-width: 72px; padding: 14px 10px; font-size: 15px; } }

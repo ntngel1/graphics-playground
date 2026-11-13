@@ -35,7 +35,7 @@ void main() {
     bool organism = scene(p).y > 0.5;
     gSmooth = true;
     n = calcNormal(p, 0.0015 * max(1.0, t));
-    vec2 s = stateOn(toLocal(p));
+    vec4 s = stateOn(toLocal(p));
     gSmooth = false;
     vh = s.y;
     float occ = calcAO(p, n);

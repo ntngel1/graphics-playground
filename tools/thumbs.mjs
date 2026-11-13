@@ -17,6 +17,7 @@ const arg = (name) => {
 const SETUP = {
   'living-surface': { query: 'steps=24', warm: 14000 },
   'gray-scott': { query: 'steps=24', warm: 10000 },
+  phototroph: { query: 'steps=24&sunAzimuth=60', warm: 12000 },
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 

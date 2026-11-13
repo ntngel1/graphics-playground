@@ -9,7 +9,9 @@ export interface Input {
   setCamera(spec: CameraSpec | undefined, keepState: boolean): void
   onChange?: () => void // для перерисовки на паузе
   onPointer?: (phase: 'down' | 'move' | 'up') => void // только для «кисти» (не вращения камеры)
-  brushMode: boolean // при включённой камере: true — одиночное перетаскивание рисует (Shift+drag — всегда)
+  // при включённой камере: 'camera' — перетаскивание вращает; любой другой режим ('brush', 'sun'…) —
+  // «рисует» (uMouse.z, onPointer). Shift+drag рисует всегда.
+  dragMode: string
   dispose(): void
 }
 
@@ -24,7 +26,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
 
   const input: Input = {
     mouse: { x: 0.5, y: 0.5, px: 0.5, py: 0.5, down: false, alt: false },
-    brushMode: false,
+    dragMode: 'camera',
     camera: { enabled: false, pos: [0, 0, 3], target: [0, 0, 0] },
     setCamera(s, keepState) {
       input.camera.enabled = !!s
@@ -71,7 +73,7 @@ export function createInput(canvas: HTMLCanvasElement): Input {
       setMouse(e)
       input.mouse.px = input.mouse.x
       input.mouse.py = input.mouse.y
-      painting = !input.camera.enabled || input.brushMode || e.shiftKey
+      painting = !input.camera.enabled || input.dragMode !== 'camera' || e.shiftKey
       if (pointers.size === 2) (pinch = pinchDist()), (painting = false)
       input.mouse.down = painting && pointers.size === 1
       // Shift в 3D — это «рисовать», а не модификатор; стирание там — правая кнопка или параметр

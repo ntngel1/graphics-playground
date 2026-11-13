@@ -94,12 +94,16 @@ export interface Experiment {
   // Свой DOM поверх канваса (палитра, кнопки): root смонтирован в body, прячется по H и в галерее.
   // Возвращаемая функция вызывается при выгрузке/пересоздании эксперимента (снять слушатели и т.п.).
   mount?: (root: HTMLElement, ctx: ExperimentContext) => (() => void) | void
+  // режимы перетаскивания для экспериментов с camera (селектор `drag [D]`, D листает по кругу);
+  // по умолчанию ['camera', 'brush']. Всё, кроме 'camera', приходит как «рисование» (uMouse.z, onPointer).
+  dragModes?: string[]
 }
 
 export interface PointerInfo {
   uv: [number, number]
   phase: 'down' | 'move' | 'up'
   shift: boolean
+  size: [number, number] // размер канваса в css px (для аспекта)
 }
 
 // То, что доступно кнопкам и колбэкам проходов.
@@ -111,6 +115,8 @@ export interface ExperimentContext {
   time: number
   frame: number
   dt: number // с, длительность кадра; 0 на паузе — для накопления фазы в Pass.uniforms
+  dragMode: string // текущий режим перетаскивания (запись меняет режим; событие 'gp-dragmode' на window)
+  readonly camera: { pos: [number, number, number]; target: [number, number, number] }
 }
 
 export const defineExperiment = <T extends Experiment>(e: T): T => e
