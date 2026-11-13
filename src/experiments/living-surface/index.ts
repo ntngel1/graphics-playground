@@ -1,3 +1,4 @@
+import { hmrState } from '../../core/hmr.ts'
 import { defineExperiment, type ExperimentContext } from '../../core/types.ts'
 import { createGrayScott, PALETTES, PATTERNS } from '../gray-scott/sim.ts'
 import pick from './pick.frag'
@@ -8,19 +9,20 @@ import render from './render.frag'
 const gs = createGrayScott({ size: [640, 256], pick: 'pick', mapMode: false })
 
 // Угол вращения копится по dt (без скачков при движении ползунка); общий для pick и рендера.
-let spin = 0
-let spinFrame = -1
+// Хранится вне модуля (hmrState): правка index.ts не сбрасывает угол; новый запуск (кадр 0) — сбрасывает.
+const rot = hmrState('living-surface', { angle: 0, frame: -1 })
 const spinUniform = (ctx: ExperimentContext) => {
-  if (spinFrame !== ctx.frame) {
-    spin = ctx.frame === 0 ? 0 : spin + ctx.dt * (ctx.params.spin as number)
-    spinFrame = ctx.frame
+  if (rot.frame !== ctx.frame) {
+    rot.angle = ctx.frame === 0 ? 0 : rot.angle + ctx.dt * (ctx.params.spin as number)
+    rot.frame = ctx.frame
   }
-  return { uSpin: spin }
+  return { uSpin: rot.angle }
 }
 
 export default defineExperiment({
   name: 'Living surface',
-  description: 'Gray-Scott как карта высот и материал на торе/плоскости/сфере. D или «drag» в панели — рисовать по поверхности.',
+  order: 1,
+  description: 'Реакция-диффузия Грея-Скотта как живая ткань на торе, сфере или плоскости. Рисуйте прямо по поверхности: режим «brush» в панели или D.',
   camera: { target: [0, -0.1, 0], distance: 3.3, yaw: 0.5, pitch: 0.6, minPitch: 0.06, maxPitch: 1.5, minDistance: 1.2, maxDistance: 12 },
   renderScale: 0.75,
   params: {

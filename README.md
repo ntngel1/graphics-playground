@@ -1,0 +1,18 @@
+# graphics playground
+
+Эксперименты с шейдерной графикой на чистом WebGL2: реймарчинг SDF, реакция-диффузия Грея-Скотта
+и их комбинация — «живая» поверхность, по которой можно рисовать.
+
+**Демо:** https://ntngel1.github.io/graphics-playground/
+
+```sh
+npm install
+npm run dev        # http://localhost:5173 (npm run dev:host — открыть с телефона)
+npm run build      # продакшен-сборка в dist/
+npm test           # тесты
+```
+
+Новый эксперимент — папка `src/experiments/<id>/` с `index.ts`; шейдеры подхватываются с горячей
+перезагрузкой. Подробности об устройстве — в [CLAUDE.md](CLAUDE.md).
+
+Клавиши: Space — пауза, S — скриншот, R — сброс, H — спрятать UI, G — галерея, D — кисть/камера.

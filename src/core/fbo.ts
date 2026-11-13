@@ -29,10 +29,11 @@ const warnOnce = (msg: string) => {
 }
 
 // Какой формат реально можно рендерить. error — для оверлея, если всё совсем плохо.
-export function resolveFormat(glc: GLContext, want: Format): { format: Format; error?: string } {
+export function resolveFormat(glc: GLContext, want: Format): { format: Format; error?: string; notice?: string } {
   const { colorBufferFloat, halfFloatBuffer } = glc.ext
   if (want === 'rgba32f' && !colorBufferFloat) {
-    if (halfFloatBuffer) return warnOnce('rgba32f is not renderable, using rgba16f'), { format: 'rgba16f' }
+    const notice = 'rgba32f render targets are unavailable — simulation runs in rgba16f (lower precision, patterns may differ slightly)'
+    if (halfFloatBuffer) return warnOnce(notice), { format: 'rgba16f', notice }
     want = 'rgba16f'
   }
   if (want === 'rgba16f' && !colorBufferFloat && !halfFloatBuffer) {

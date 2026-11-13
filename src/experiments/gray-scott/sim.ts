@@ -4,7 +4,7 @@
 //   params: { ...gs.params, ...свои }, buffers: { ...gs.buffers, ...свои },
 //   passes: [...свои до, ...gs.passes, свой проход с inputs: { uState: 'state' }],
 //
-// Состояние: буфер 'state' (R = U, G = V), wrap repeat — периодично по обеим осям.
+// Состояние: буфер 'state' (R = 1 − U, G = V), wrap repeat — периодично по обеим осям.
 import type { BufferSpec, ExperimentContext, Pass, ParamDef, ParamValues, PointerInfo } from '../../core/types.ts'
 import initFrag from './init.frag'
 import simFrag from './sim.frag'

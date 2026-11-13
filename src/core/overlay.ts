@@ -2,6 +2,7 @@ import { PRELUDE_ID, snippet, type ShaderError } from './shader.ts'
 
 export interface Overlay {
   set(key: string, errors: ShaderError[] | null, files?: Map<string, string>): void
+  notice(text: string, ms?: number): void // ненавязчивое предупреждение, само исчезает
   clear(): void
 }
 
@@ -35,7 +36,19 @@ export function createOverlay(): Overlay {
     el.innerHTML = html
   }
 
+  const toast = document.createElement('div')
+  toast.className = 'gp-notice'
+  toast.hidden = true
+  document.body.append(toast)
+  let toastTimer = 0
+
   return {
+    notice(text, ms = 7000) {
+      toast.textContent = text
+      toast.hidden = false
+      clearTimeout(toastTimer)
+      toastTimer = window.setTimeout(() => (toast.hidden = true), ms)
+    },
     set(key, errors, files = new Map()) {
       if (errors?.length) entries.set(key, { errors, files })
       else entries.delete(key)

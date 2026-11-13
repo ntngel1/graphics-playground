@@ -1,12 +1,14 @@
+import { hmrState } from '../../core/hmr.ts'
 import { defineExperiment } from '../../core/types.ts'
 import frag from './scene.frag'
 
-// Фаза анимации копится по dt, поэтому движение ползунка speed не даёт скачка.
-let phase = 0
+// Фаза анимации копится по dt, поэтому движение ползунка speed не даёт скачка; переживает HMR.
+const anim = hmrState('raymarch-basics', { phase: 0 })
 
 export default defineExperiment({
   name: 'Raymarch basics',
-  description: 'Примитивы со smooth union и смешиванием материалов, мягкие тени, AO, туман. Камера — мышью.',
+  order: 3,
+  description: 'Реймарчинг SDF: примитивы сливаются через smooth union со смешиванием материалов, мягкие тени, AO, туман. Камера — мышью.',
   camera: { target: [0, 0.75, 0], distance: 5.2, yaw: 0.7, pitch: 0.3, minPitch: 0.04, maxPitch: 1.45, minDistance: 1.8, maxDistance: 15 },
   params: {
     blend: { label: 'smooth k', value: 0.45, min: 0, max: 1, step: 0.01 },
@@ -25,8 +27,8 @@ export default defineExperiment({
     {
       frag,
       uniforms: (ctx) => {
-        phase = ctx.frame === 0 ? 0 : phase + ctx.dt * (ctx.params.speed as number)
-        return { uPhase: phase }
+        anim.phase = ctx.frame === 0 ? 0 : anim.phase + ctx.dt * (ctx.params.speed as number)
+        return { uPhase: anim.phase }
       },
     },
   ],

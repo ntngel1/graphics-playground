@@ -103,8 +103,9 @@ export function createPipeline(glc: GLContext, exp: Experiment, overlay: Overlay
         s.buf.resize(w, h)
         continue
       }
-      const { format, error } = resolveFormat(glc, s.spec.format ?? 'rgba16f')
+      const { format, error, notice } = resolveFormat(glc, s.spec.format ?? 'rgba16f')
       if (error) configError(`buffer '${s.name}'`, error)
+      if (notice) overlay.notice(notice)
       s.buf = createBuffer(glc, s.spec, w, h, format)
       needInit.add(s.name)
     }

@@ -3,7 +3,8 @@ import frag from './hello.frag'
 
 export default defineExperiment({
   name: 'Hello',
-  description: 'Плазма на fbm с domain warping; мышь — светящееся пятно (ярче при нажатии).',
+  order: 4,
+  description: 'Минимальный шаблон: один проход, include, параметры разных типов. Плазма на fbm, мышь — светящееся пятно.',
   params: {
     speed: { value: 1, min: 0, max: 5, step: 0.01 },
     tint: { value: '#ff8844' },

@@ -8,11 +8,13 @@ import { createParams, decodeParams, defaults, encodeParams, type Params } from 
 import { createPipeline, type Pipeline } from './core/pipeline.ts'
 import type { Experiment, ExperimentContext, ParamValues } from './core/types.ts'
 import { experiments as registry } from './experiments/index.ts'
+import { createGallery } from './ui/gallery.ts'
 import './ui/style.css'
 
 const canvas = document.querySelector<HTMLCanvasElement>('#gl')!
 const glc = createGL(canvas)
 const overlay = createOverlay()
+const gallery = createGallery()
 const input = createInput(canvas)
 let experiments = registry
 
@@ -100,13 +102,40 @@ function reset() {
 
 // ---------- Панель ----------
 const coarse = matchMedia('(pointer: coarse)').matches
-const pane = new Pane({ title: 'playground', expanded: !coarse })
+// на телефоне и узком экране панель свёрнута; высота ограничена в CSS (прокрутка)
+const pane = new Pane({ title: 'playground', expanded: !coarse && innerWidth > 640 })
 const general = pane.addFolder({ title: 'general', expanded: false })
+general.addButton({ title: 'gallery [G]' }).on('click', () => (location.hash = ''))
+general.addButton({ title: 'copy link' }).on('click', copyLink)
 general.addBinding(loop, 'scale', { label: 'render scale', min: 0.25, max: 1, step: 0.05 }).on('change', () => loop.resize())
 general.addBinding(loop, 'paused', { label: 'pause [space]' })
 general.addBinding(loop, 'fps', { readonly: true, format: (v: number) => v.toFixed(0), interval: 500 })
 general.addButton({ title: 'reset [R]' }).on('click', reset)
 general.addButton({ title: 'screenshot [S]' }).on('click', takeScreenshot)
+
+// ссылка с текущими параметрами (hash пишется с дебаунсом — сначала досбрасываем)
+async function copyLink() {
+  flushHash()
+  try {
+    await navigator.clipboard.writeText(location.href)
+  } catch {
+    // нет Clipboard API / фокуса — старый способ через выделение текста
+    const ta = document.createElement('textarea')
+    ta.value = location.href
+    document.body.append(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    ta.remove()
+    if (!ok) return overlay.notice(`copy failed: ${location.href}`, 8000)
+  }
+  overlay.notice('link copied', 1500)
+}
+
+// строка-подсказка в углу (прячется вместе с UI по H); на тач-устройствах — только «галерея»
+const hints = document.createElement('div')
+hints.className = 'gp-hints'
+hints.innerHTML = `<a href="#">← gallery</a>${coarse ? '' : '<span> · space pause · S shot · R reset · H hide UI · G gallery · D brush/camera</span>'}`
+document.body.append(hints)
 
 function takeScreenshot() {
   screenshot = true
@@ -131,13 +160,15 @@ function parseHash() {
 }
 
 let hashTimer = 0
+function flushHash() {
+  clearTimeout(hashTimer)
+  if (!cur) return
+  const q = encodeParams(cur.exp.params ?? {}, cur.params.values)
+  history.replaceState(null, '', `#${cur.id}${q ? '?' + q : ''}`)
+}
 function writeHash() {
   clearTimeout(hashTimer)
-  hashTimer = window.setTimeout(() => {
-    if (!cur) return
-    const q = encodeParams(cur.exp.params ?? {}, cur.params.values)
-    history.replaceState(null, '', `#${cur.id}${q ? '?' + q : ''}`)
-  }, 250)
+  hashTimer = window.setTimeout(flushHash, 250)
 }
 
 function paramsChanged() {
@@ -148,9 +179,8 @@ function paramsChanged() {
 // ---------- Загрузка эксперимента ----------
 // keepState: HMR index.ts — сохраняем время/кадр/камеру (и значения параметров через values).
 function load(id: string, values: ParamValues, keepState = false) {
-  if (!experiments[id]) id = Object.keys(experiments)[0]
   const exp = experiments[id]
-  if (!exp) throw new Error('no experiments in src/experiments')
+  gallery.hide()
 
   // HMR index.ts: буферы с той же раскладкой переезжают в новый пайплайн вместе с содержимым
   const kept = keepState ? cur?.pipeline.detachBuffers(exp.buffers) : undefined
@@ -187,7 +217,8 @@ function load(id: string, values: ParamValues, keepState = false) {
 
   input.setCamera(exp.camera, keepState)
   if (!keepState) {
-    if (exp.renderScale) (loop.scale = exp.renderScale), loop.resize()
+    loop.scale = exp.renderScale ?? 1 // масштаб — свойство эксперимента (тяжёлым — меньше)
+    loop.resize()
     reset()
   }
   pane.refresh()
@@ -195,16 +226,27 @@ function load(id: string, values: ParamValues, keepState = false) {
   document.title = `${exp.name} · playground`
 }
 
+// Галерея: ресурсы эксперимента освобождаются, кадры не рисуются (frame() выходит сразу).
+function unload() {
+  cur?.pipeline.dispose()
+  cur?.folder.dispose()
+  cur = null
+}
+
 function fromHash() {
   const { id, query } = parseHash()
+  if (!experiments[id]) {
+    unload()
+    if (id) history.replaceState(null, '', location.pathname + location.search) // неизвестный id → чистый URL
+    gallery.show(experiments)
+    return
+  }
   if (cur && id === cur.id) {
     cur.params.set({ ...defaults(cur.exp.params ?? {}), ...decodeParams(cur.exp.params ?? {}, query) })
     loop.requestRedraw()
     return
   }
-  const exp = experiments[id]
-  load(id, exp ? decodeParams(exp.params ?? {}, query) : {})
-  if (cur && cur.id !== id) writeHash()
+  load(id, decodeParams(experiments[id].params ?? {}, query))
 }
 addEventListener('hashchange', fromHash)
 fromHash()
@@ -215,7 +257,8 @@ onShaderUpdate((s) => {
 })
 onExperimentsUpdate((next) => {
   experiments = next
-  if (cur) load(cur.id, cur.params.values, true)
+  if (cur && experiments[cur.id]) load(cur.id, cur.params.values, true)
+  else if (gallery.visible || cur) fromHash()
 })
 
 // Отладочный доступ из консоли / e2e (только dev)
@@ -255,6 +298,9 @@ addEventListener('keydown', (e) => {
       if (!cur?.exp.camera) return
       input.brushMode = !input.brushMode
       pane.refresh()
+      break
+    case 'KeyG':
+      location.hash = ''
       break
     case 'KeyH':
       document.body.classList.toggle('gp-hide-ui')

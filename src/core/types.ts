@@ -77,7 +77,8 @@ export interface CameraSpec {
 // ---------- Эксперимент ----------
 export interface Experiment {
   name: string
-  description?: string
+  description?: string // текст карточки в галерее
+  order?: number // порядок в галерее (меньше — раньше; без order — в конце, по id)
   params?: ParamSchema
   passes: Pass[]
   buffers?: Record<string, BufferSpec>

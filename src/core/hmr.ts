@@ -18,3 +18,9 @@ export const onShaderUpdate = (cb: (s: ShaderSource) => void) => listen('glsl-up
 export const onExperimentsUpdate = (cb: (e: Record<string, Experiment>) => void) => listen('experiments-update', cb)
 export const emitExperimentsUpdate = (e: Record<string, Experiment>) =>
   dispatchEvent(new CustomEvent('experiments-update', { detail: e }))
+
+// Состояние модуля эксперимента, переживающее HMR (модуль index.ts при правке выполняется заново).
+export function hmrState<T extends object>(key: string, init: T): T {
+  const g = globalThis as { __gpState?: Record<string, object> }
+  return ((g.__gpState ??= {})[key] ??= init) as T
+}

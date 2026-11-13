@@ -37,7 +37,11 @@ vec2 stateSmooth(vec2 uv) {
   float sx = s.x / (s.x + s.y), sy = s.z / (s.z + s.w);
   return mix(mix(s3, s2, sx), mix(s1, s0, sx), sy);
 }
-vec2 stateAt(vec2 uv) { return gSmooth ? stateSmooth(uv) : texture(uState, uv).rg; }
+// (U, V); в буфере хранится R = 1 − U
+vec2 stateAt(vec2 uv) {
+  vec2 s = gSmooth ? stateSmooth(uv) : texture(uState, uv).rg;
+  return vec2(1.0 - s.x, s.y);
+}
 
 vec3 toLocal(vec3 p) { return rotY(p, uSpin); }
 

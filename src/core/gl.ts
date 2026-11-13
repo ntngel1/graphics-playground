@@ -28,6 +28,10 @@ export function createGL(canvas: HTMLCanvasElement): GLContext {
     floatLinear: !!gl.getExtension('OES_texture_float_linear'),
     halfFloatBuffer: !!gl.getExtension('EXT_color_buffer_half_float'),
   }
+  // Проверка фолбэков: ?float=16 — как будто нет float32-таргетов (типично для iOS), ?float=0 — нет никаких
+  const force = new URLSearchParams(location.search).get('float')
+  if (force === '16' || force === '0') ext.colorBufferFloat = false
+  if (force === '0') ext.halfFloatBuffer = false
   // Фуллскрин-треугольник без атрибутов: вершины из gl_VertexID, VAO пустой.
   const vao = gl.createVertexArray()
   return {

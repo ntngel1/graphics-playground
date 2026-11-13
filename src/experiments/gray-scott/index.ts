@@ -6,7 +6,8 @@ const gs = createGrayScott()
 
 export default defineExperiment({
   name: 'Gray-Scott',
-  description: 'Реакция-диффузия. Рисуйте мышью/пальцем (Shift — стереть). Режим карты: feed/kill по осям, тап выбирает точку.',
+  order: 2,
+  description: 'Реакция-диффузия Грея-Скотта: рисуйте мышью или пальцем (Shift — стереть), пресеты узоров и карта feed/kill со всеми режимами сразу.',
   params: {
     ...gs.params,
     palette: { value: 'ocean', options: PALETTES, folder: 'display' },
