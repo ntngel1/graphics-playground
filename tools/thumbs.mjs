@@ -19,6 +19,7 @@ const SETUP = {
   'gray-scott': { query: 'steps=24', warm: 10000 },
   phototroph: { query: 'steps=24&sunAzimuth=60', warm: 12000 },
   knobs: { query: 'level=hatch&knobA=0.41&knobB=0.9', warm: 2500 },
+  sine: { query: 'autopilot=switch', warm: 30000 },
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 

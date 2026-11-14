@@ -330,6 +330,7 @@ if (import.meta.env.DEV) {
 addEventListener('keydown', (e) => {
   const t = e.target as HTMLElement
   if (e.ctrlKey || e.metaKey || e.altKey || t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return
+  if (cur?.exp.ownKeys?.includes(e.code)) return
   switch (e.code) {
     case 'Space':
       loop.paused = !loop.paused

@@ -95,6 +95,18 @@ Plasticine (`src/experiments/knobs`): головоломка — шарик ка
 по 1/60 с), статус — `ctx.read('ball')[3]` (0 ждёт, 1 катится, 2 победа, 3 упал); скрипт — `e2e8.mjs` в отчёте.
 Ядро для этого получило `ctx.read(buffer)`, `__gp.step(n)`, `Experiment.paneCollapsed`.
 
+Resonance (`src/experiments/sine`): игра «всё — синус». Логика — `game.ts`, чистый TS без DOM/GL (фиксированный
+шаг 1/60, свой RNG от сида; бот `bot(g, 'switch'|'stay'|'idle')`); шаг вызывается из `Pass.uniforms` по накопленному
+`ctx.dt`, R / `ctx.frame` = 0 — новая игра. Сущности уходят в шейдер юниформ-массивами `uA..uD[36]` (4 vec4 на слот,
+раскладка — `pack()`; ядро уже умеет массивы: `prog.set('uA', Float32Array)`). Движение существ — явные формулы от
+времени (`shapeAt`), не интеграция. **Манифест**: шейдеры папки используют только алфавит `alphabet.glsl`
+(sin, арифметика, sqrt/dot, abs/min/max/clamp/mix/step/smoothstep; угол θ не считается — `cpow(z, n)`); без
+текстур и include из `src/glsl` — проверяет `tests/sine-manifest.test.ts`. Звук `audio.ts` — только sine-осцилляторы.
+Новый вид существа: `Kind` + `UNLOCK/WEIGHT/VALUE/FEED`, ветки в `spawn`/`shapeAt`/`pack`, код вида в `main.frag`
+(`creature`/`xray`), строка в `formula()` и `KIND_INFO` (index.ts). Баланс — `tests/sine-game.test.ts` (боты в Node);
+в браузере: `?autopilot=switch`, `__gpState.sine` (`seed`, `g`, `sound.stats`), `__gp.step(n)`.
+Ядро для игр получило `Experiment.ownKeys` — коды клавиш, на которых молчат горячие клавиши ядра (WASD, F, M).
+
 ## Шейдеры
 - `#include "file"` — рядом с файлом, затем `src/glsl`; `#include <name>` — только `src/glsl`; расширение
   `.glsl` можно опускать; include-once; циклы — ошибка.
@@ -110,8 +122,10 @@ Plasticine (`src/experiments/knobs`): головоломка — шарик ка
 - Правка ядра — полный релоад.
 
 ## Клавиши
-Space — пауза, S — PNG, R — сброс, H — спрятать UI, G — галерея, D — кисть/камера (эксперименты с camera);
-в sandbox: 1–9, 0 — материалы, E — ластик, колесо — размер кисти, правая кнопка — стереть.
+Space — пауза, S — PNG, R — сброс, H — спрятать UI, G — галерея, D — кисть/камера (эксперименты с camera;
+эксперимент может забрать клавиши через `ownKeys`);
+в sandbox: 1–9, 0 — материалы, E — ластик, колесо — размер кисти, правая кнопка — стереть;
+в Resonance: мышь/палец/WASD/стрелки — движение, 1–5 / Q E / колесо — частота, F — формулы, M — звук, Enter — заново.
 Не срабатывают в полях ввода и с Ctrl/Cmd/Alt.
 
 ## Отладка и проверка

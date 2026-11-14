@@ -98,6 +98,7 @@ export interface Experiment {
   // по умолчанию ['camera', 'brush']. Всё, кроме 'camera', приходит как «рисование» (uMouse.z, onPointer).
   dragModes?: string[]
   paneCollapsed?: boolean // панель настроек свёрнута при открытии (у игр своя UI)
+  ownKeys?: string[] // KeyboardEvent.code, которые эксперимент забирает себе: горячие клавиши ядра на них молчат (WASD в играх)
 }
 
 export interface PointerInfo {
