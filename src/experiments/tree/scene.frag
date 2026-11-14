@@ -13,8 +13,29 @@ uniform bool uForest;
 uniform float uSunAzimuth;
 uniform float uSunHeight;
 uniform int uDebug;      // 0 картинка, 1 шаги марша, 2 нормали
+// PS1-вид (src/retro/retro.ts): сцена рисуется в низкий буфер, present квантует цвет
+uniform float uPs1Jitter;
+uniform float uPs1Fog;
+uniform int uPs1Facets;  // 0 none, 1 normals, 2 snap, 3 poly
 
-// глобалы, которые читает tree.glsl
+#include <retro>
+
+// глобалы, которые читает tree.glsl.
+// Две сборки одного файла: обычная (флаги — константы false, компилятор выбрасывает весь PS1-код — иначе
+// он раздувает шейдер и обычный вид медленнее в 1.5 раза) и scene-ps1.frag (#define RETRO).
+#ifdef RETRO
+const bool PS1 = true;
+bool POLY = false;     // гранёная геометрия (facets poly)
+bool JITTER = false;   // дрожание вершин включено
+#else
+const bool PS1 = false;
+const bool POLY = false;
+const bool JITTER = false;
+#endif
+vec3 CAMU, CAMV, CAMW;
+vec3 TREE_ORG;         // мировое начало и масштаб дерева, которое сейчас считается
+float TREE_SC = 1.0;
+vec3 snapW(vec3 w) { return JITTER ? retroSnap(w, uCamPos, CAMU, CAMV, CAMW, 2.7475, uResolution, uPs1Jitter) : vec3(0.0); }
 vec3 PW;
 bool CHEAP = false;    // тени и AO: без травы и шума листвы (и без границ клеток травы)
 bool REC = false;      // запись подробностей ближайшей поверхности (только для точки попадания)
@@ -44,6 +65,44 @@ float groundH(vec2 xz) {
   float far = smoothstep(3.0, 14.0, sqrt(r2));
   h += (vnoise(xz * 0.11 + 3.1) - 0.5) * (0.5 + (uForest ? 1.6 : 0.6) * far);
   return h;
+}
+
+// PS1: та же земля, но из треугольников 1.6×1.6 (вершины — groundH в узлах, по диагонали) —
+// плоские грани, вершины дрожат по пикселям вместе с камерой
+float groundPoly(vec2 xz) {
+  const float S = 1.6;
+  vec2 c = floor(xz / S), f = xz / S - c;
+  vec4 h = vec4(groundH(c * S), groundH((c + vec2(1.0, 0.0)) * S), groundH((c + vec2(0.0, 1.0)) * S), groundH((c + 1.0) * S));
+  if (JITTER) {
+    h.x += snapW(vec3(c.x * S, h.x, c.y * S)).y;
+    h.y += snapW(vec3(c.x * S + S, h.y, c.y * S)).y;
+    h.z += snapW(vec3(c.x * S, h.z, c.y * S + S)).y;
+    h.w += snapW(vec3(c.x * S + S, h.w, c.y * S + S)).y;
+  }
+  return f.x > f.y ? h.x + (h.y - h.x) * f.x + (h.w - h.y) * f.y : h.x + (h.w - h.z) * f.x + (h.z - h.x) * f.y;
+}
+float groundAt(vec2 xz) { return POLY ? groundPoly(xz) : groundH(xz); }
+
+// PS1-трава: крестики из двух вертикальных «спрайтов» с пилообразным верхом (силуэт травинок)
+vec2 grassSprites(vec3 p, float gh) {
+  const float C = 0.9;
+  vec2 cell = floor(p.xz / C);
+  vec2 lp = p.xz - (cell + 0.5) * C;
+  vec3 h = hash33(vec3(cell, 8.1));
+  float d = C * 0.5 - max(abs(lp.x), abs(lp.y)) + 0.05;
+  float r = length(p.xz);
+  if (h.x > 0.55 * smoothstep(12.0, 8.0, r) * smoothstep(0.6, 1.2, length(p.xz - TREE0.xz))) return vec2(d, 4.0);
+  vec3 q = vec3(lp.x - (h.y - 0.5) * 0.3, p.y - gh, lp.y - (h.z - 0.5) * 0.3);
+  q.xz = rot2(h.y * 3.0) * q.xz;
+  float hg = mix(0.22, 0.34, h.z) * mix(1.0, 0.5, SW.w);
+  for (int k = 0; k < 2; k++) {
+    vec2 u = k == 0 ? q.xz : vec2(q.z, -q.x);
+    float saw = 1.0 - abs(fract(u.x * 9.0) - 0.5) * 1.4; // зубцы-травинки
+    float top = hg * saw;
+    float face = max(max(abs(u.x) - 0.17, q.y - top), -q.y - 0.05);
+    d = min(d, max(face, abs(u.y) - 0.004) * 0.7);
+  }
+  return vec2(d, 4.0);
 }
 
 float sdCone2(vec3 p, vec3 a, vec3 b, float ra, float rb) {
@@ -99,8 +158,14 @@ vec2 rocks(vec3 p) {
     float s = 0.18 + 0.1 * float(i);
     if (dot(q, q) > (s * 3.0) * (s * 3.0)) { d = min(d, length(q) - s * 2.0); continue; }
     q = rotY(q, float(i) * 1.9);
-    float e = sdEllipsoid(q, vec3(1.4, 0.8, 1.1) * s);
-    e += 0.03 * gnoise(p * 6.0 + float(i));
+    float e;
+    if (POLY) { // PS1: сплюснутый додекаэдр
+      q -= snapW(ROCK[i]);
+      e = sdDodeca(q / vec3(1.4, 0.8, 1.1), s) * 0.8;
+    } else {
+      e = sdEllipsoid(q, vec3(1.4, 0.8, 1.1) * s);
+      e += 0.03 * gnoise(p * 6.0 + float(i));
+    }
     d = min(d, e * 0.8);
   }
   return vec2(d, 5.0);
@@ -125,10 +190,10 @@ vec2 treeAt(vec3 lp, float seed, float g, int sp, int levels) {
 // x — расстояние, y — материал: 0 земля, 1 кора, 2 листва, 3 хвоя, 4 трава, 5 камень, 6 цветок
 vec2 scene(vec3 p) {
   PW = p;
-  float gh = groundH(p.xz);
+  float gh = groundAt(p.xz);
   vec2 res = vec2((p.y - gh) * 0.75, 0.0);
   if (!CHEAP && p.y - gh < 0.42 && dot(p.xz, p.xz) < 144.0) {
-    vec2 gr = grass(p, gh);
+    vec2 gr = PS1 ? grassSprites(p, gh) : grass(p, gh);
     if (gr.x < res.x) res = gr;
   }
   vec2 rk = rocks(p);
@@ -137,7 +202,9 @@ vec2 scene(vec3 p) {
   // главное дерево — в ограничивающем объёме (лучи мимо не платят за ветки)
   WIND_LOCAL = uWind;
   float gs = mix(0.3, 1.0, smoothstep(0.0, 0.85, uGrowth));
-  vec3 tp = p - TREE0;
+  TREE_ORG = TREE0 + snapW(TREE0);
+  TREE_SC = 1.0;
+  vec3 tp = p - TREE_ORG;
   if (treeBound(tp, gs) < res.x) {
     vec2 tr = treeAt(tp, uTreeSeed, uGrowth, uSpecies, 4);
     tr.x *= 0.7; // складки и шум — осторожный шаг (иначе луч проскакивает складки между комками)
@@ -154,7 +221,10 @@ vec2 scene(vec3 p) {
     if (cell != vec2(0.0) && max(abs(cell.x), abs(cell.y)) <= 4.0 && h.x < 0.62) {
       vec2 c = cell * CS + (h.yz - 0.5) * 3.0;
       float sz = mix(0.75, 1.15, h.y);
-      vec3 fp = (p - vec3(c.x, groundH(c) - 0.05, c.y)) / sz;
+      TREE_ORG = vec3(c.x, groundAt(c) - 0.05, c.y);
+      TREE_ORG += snapW(TREE_ORG);
+      TREE_SC = sz;
+      vec3 fp = (p - TREE_ORG) / sz;
       if (treeBound(fp, 1.0) * sz < res.x) {
         float dc = length(c - uCamPos.xz);
         int sp = h.z < 0.3 ? 2 : h.z < 0.5 ? 1 : 0;
@@ -301,23 +371,116 @@ vec4 particles(vec3 ro, vec3 rd, float tHit) {
   return acc;
 }
 
+// ---------------- PS1 ----------------
+vec3 FOGC; // цвет тумана = низ неба
+
+// небо в 3 ступени + плоские облака-«наклейки» в координатах (азимут, высота) + плоское солнце
+vec3 ps1Sky(vec3 rd) {
+  vec3 zen = mix(vec3(0.34, 0.52, 0.84), vec3(0.55, 0.66, 0.84), SW.w);
+  float y = clamp(rd.y, 0.0, 1.0);
+  vec3 c = mix(FOGC, zen, floor(min(y * 9.0, 2.0)) / 2.0); // ступени у горизонта: туман → середина → зенит
+  float az = atan(rd.z, rd.x);
+  for (int i = 0; i < 4; i++) {
+    float a0 = float(i) * 1.7 + 0.4 + uTime * 0.004;
+    float da = mod(az - a0 + 3.14159, 6.28318) - 3.14159;
+    vec2 v = vec2(da * 1.2, rd.y - 0.15 - 0.03 * float(i));
+    float e = 1e9;
+    for (int k = 0; k < 3; k++) {
+      vec2 o = vec2((float(k) - 1.0) * 0.1, float(k == 1) * 0.025);
+      e = min(e, length((v - o) / vec2(0.1, 0.045)));
+    }
+    if (e < 1.0) c = v.y < -0.012 ? vec3(0.78, 0.82, 0.9) : vec3(0.97, 0.97, 0.95);
+  }
+  if (dot(rd, SUN) > 0.9985) c = vec3(1.0, 0.95, 0.75);
+  return c;
+}
+
+// текстура «с дискеты»: случайное значение целого текселя
+float tex(vec2 uv) { return hash12(floor(uv)); }
+
+vec3 ps1Shade(vec3 p, vec3 n, float mat, float t, vec3 rd) {
+  vec3 grassC = SW.x * vec3(0.5, 0.72, 0.28) + SW.y * vec3(0.36, 0.58, 0.22) + SW.z * vec3(0.66, 0.58, 0.28) + SW.w * vec3(0.6, 0.58, 0.45);
+  // «плавание» текстуры: аффинная (без перспективной коррекции) выборка смещается с ракурсом —
+  // имитация: сдвиг uv на долю от направления взгляда, растущую к краям кадра
+  vec2 swim = rd.xz * dot(rd, CAMU) * 0.6;
+  vec3 alb;
+  if (mat < 0.5) { // земля
+    vec2 uv = p.xz * 6.0 + swim;
+    alb = grassC * (0.78 + 0.32 * tex(uv));
+    // пятна земли: порог по value noise — края идут по текселям, но форма не квадратная
+    if (vnoise(floor(uv) * 0.11 + 7.0) > 0.78) alb = mix(vec3(0.5, 0.4, 0.28), vec3(0.6, 0.48, 0.34), tex(uv));
+    if (tex(uv + 3.0) > 0.993 && SW.x + SW.y > 0.5) alb = tex(uv + 9.0) > 0.5 ? vec3(0.95, 0.85, 0.3) : vec3(0.95, 0.6, 0.7);
+  } else if (mat < 1.5) { // кора: 6 столбцов по окружности, вертикальные штрихи
+    vec3 q = recLocal;
+    vec2 uv = vec2(atan(q.z, q.x) / 6.28318 * 6.0, q.y * 4.0);
+    float col = tex(vec2(uv.x, 0.0)), h = tex(uv);
+    if (uSpecies == 1) alb = h > 0.8 && recLevel < 1.5 ? vec3(0.18) : vec3(0.88, 0.86, 0.8);
+    else alb = mix(vec3(0.34, 0.22, 0.14), vec3(0.5, 0.36, 0.22), 0.5 * col + 0.5 * h);
+    alb = mix(vec3(0.4, 0.6, 0.24), alb, max(smoothstep(0.08, 0.4, uGrowth), step(4.0, length(p.xz - TREE0.xz))));
+  } else if (mat < 2.5 || mat > 2.5 && mat < 3.5) { // листва / хвоя: трипланарные тексели
+    vec3 an = abs(n);
+    vec2 uv = (an.x > an.y && an.x > an.z ? p.yz : an.y > an.z ? p.xz : p.xy) * 7.0 + swim;
+    float h = tex(uv + recHash * 13.0);
+    float hh = fract(recHash * 0.618);
+    vec3 spring = vec3(0.56, 0.78, 0.3), summer = mix(vec3(0.26, 0.5, 0.18), vec3(0.36, 0.56, 0.2), hh);
+    vec3 autumn = uSpecies == 1 ? vec3(0.95, 0.78, 0.2) : hh < 0.4 ? vec3(0.96, 0.66, 0.16) : vec3(0.86, 0.32, 0.12);
+    alb = mat > 2.5 ? vec3(0.16, 0.32, 0.2) : (SW.x * spring + SW.y * summer + (SW.z + SW.w) * autumn);
+    alb *= 0.72 + 0.45 * h;
+    if (mat < 2.5 && uSpecies == 0 && h > 0.9) alb = mix(alb, vec3(1.0, 0.82, 0.88), SW.x);
+  } else if (mat < 4.5) { // спрайты травы: кончики светлее
+    float y = clamp((p.y - groundAt(p.xz)) / 0.3, 0.0, 1.0);
+    alb = grassC * (0.75 + 0.35 * floor(y * 3.0) / 2.0) * (0.9 + 0.2 * tex(p.xz * 12.0));
+  } else { // камень
+    vec2 uv = (abs(n.y) > 0.6 ? p.xz : p.xy + p.zy) * 7.0;
+    alb = vec3(0.5, 0.49, 0.47) * (0.8 + 0.35 * tex(uv));
+  }
+  // снег — по нормали, с рваным тексельным краем
+  if (SNOW > 0.01 && n.y + 0.3 * (tex(p.xz * 6.0) - 0.5) > mix(1.2, 0.45, SNOW)) alb = vec3(0.93, 0.95, 1.0) * (0.92 + 0.08 * tex(p.xz * 6.0));
+
+  // грубый свет: плоская заливка грани (нормаль гранёной SDF постоянна на грани), без теней и AO
+  float dif = max(dot(n, SUN), 0.0);
+  vec3 col = alb * (vec3(0.46, 0.5, 0.6) + vec3(1.0, 0.9, 0.75) * 0.85 * dif);
+  // тень-«блин» под деревом и камнями (как в играх того времени)
+  if (mat < 0.5 || (mat > 3.5 && mat < 4.5)) {
+    float gs = mix(0.3, 1.0, smoothstep(0.0, 0.85, uGrowth));
+    float b = 1.0 - step(length((p.xz - TREE0.xz) * vec2(1.0, 1.15)), 1.7 * gs) * 0.42;
+    for (int i = 0; i < 3; i++) b *= 1.0 - step(length(p.xz - ROCK[i].xz), 0.32 + 0.14 * float(i)) * 0.35;
+    if (uForest) {
+      vec2 cell = round(p.xz / 10.0);
+      vec3 h = hash33(vec3(cell, 31.0));
+      vec2 c = cell * 10.0 + (h.yz - 0.5) * 3.0;
+      if (cell != vec2(0.0) && h.x < 0.62) b *= 1.0 - step(length(p.xz - c), 1.6 * mix(0.75, 1.15, h.y)) * 0.42;
+    }
+    col *= b;
+  }
+  return mix(col, FOGC, smoothstep(uPs1Fog * 0.3, uPs1Fog, t));
+}
+
 void main() {
   SW = vec4(seasonW(uSeason, 0.125), seasonW(uSeason, 0.375), seasonW(uSeason, 0.625), seasonW(uSeason, 0.875));
   SW /= max(dot(SW, vec4(1.0)), 1e-3);
   SNOW = SW.w;
   LEAF = dot(SW, vec4(0.8, 1.0, 0.75, 0.0));
+  float az = radians(uSunAzimuth), el = radians(uSunHeight);
+  SUN = vec3(cos(el) * sin(az), sin(el), cos(el) * cos(az));
+#ifdef RETRO
+  POLY = uPs1Facets == 3;
+  JITTER = uPs1Jitter > 0.0;
+#endif
+  CAMW = normalize(uCamTarget - uCamPos);
+  CAMU = normalize(cross(CAMW, vec3(0.0, 1.0, 0.0)));
+  CAMV = cross(CAMU, CAMW);
+  FOGC = mix(mix(vec3(0.8, 0.85, 0.9), vec3(0.86, 0.88, 0.92), SW.w), vec3(0.9, 0.8, 0.66), SW.z * 0.5);
   TREE0 = vec3(0.0, groundH(vec2(0.0)) - 0.05, 0.0);
   ROCK[0] = vec3(1.5, 0.0, 0.9);
   ROCK[1] = vec3(-1.3, 0.0, 1.5);
   ROCK[2] = vec3(0.4, 0.0, -1.9);
-  for (int i = 0; i < 3; i++) ROCK[i].y = groundH(ROCK[i].xz) + 0.04;
-  float az = radians(uSunAzimuth), el = radians(uSunHeight);
-  SUN = vec3(cos(el) * sin(az), sin(el), cos(el) * cos(az));
+  for (int i = 0; i < 3; i++) ROCK[i].y = groundAt(ROCK[i].xz) + 0.04;
 
   vec3 ro = uCamPos;
   vec3 rd = cameraRay(gl_FragCoord.xy, uResolution, ro, uCamTarget, 40.0);
 
-  float t = 0.05, tmax = uForest ? 70.0 : 45.0;
+  float t = 0.05, tmax = PS1 ? uPs1Fog : uForest ? 70.0 : 45.0; // PS1: короткая дальность, дальше — туман
   int steps = 0;
   vec2 m = vec2(0.0);
   bool hit = false;
@@ -333,6 +496,25 @@ void main() {
   vec3 sky = skyCol(rd);
   vec3 col = sky;
   vec3 n = vec3(0.0);
+  if (PS1) {
+    if (hit) {
+      vec3 p = ro + rd * t;
+      REC = true;
+      recBark = 1e9;
+      m = scene(p);
+      REC = false;
+      // facets: normals — нормаль к сетке направлений; snap — нормаль в точке, привязанной к мировой сетке
+      vec3 pn = uPs1Facets == 2 ? floor(p / 0.18 + 0.5) * 0.18 : p;
+      n = calcNormal(pn, 0.002 * max(1.0, t * 0.5));
+      if (uPs1Facets == 1) n = quantNormal(n, 5.0);
+      col = ps1Shade(p, n, m.y, t, rd);
+    } else col = ps1Sky(rd);
+    vec4 pt = particles(ro, rd, hit ? t : 1e4);
+    col = mix(col, pow(pt.rgb, vec3(1.0 / 2.2)), pt.a);
+    if (uDebug == 2) col = n * 0.5 + 0.5;
+    fragColor = vec4(col, 1.0);
+    return;
+  }
   if (hit) {
     vec3 p = ro + rd * t;
     REC = true;

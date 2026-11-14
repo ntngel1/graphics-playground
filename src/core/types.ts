@@ -120,6 +120,7 @@ export interface ExperimentContext {
   dragMode: string // текущий режим перетаскивания (запись меняет режим; событие 'gp-dragmode' на window)
   readonly camera: { pos: [number, number, number]; target: [number, number, number] }
   read(buffer: string): Float32Array | null // readPixels float-буфера (маленьких! синхронно ждёт GPU)
+  renderScale: number // масштаб рендера (запись — как ползунок 'render scale'; ретро-вид ставит 1)
 }
 
 export const defineExperiment = <T extends Experiment>(e: T): T => e

@@ -1,4 +1,5 @@
-// Дерево как SDF. Требует <sdf>, <noise> и глобалов из scene.frag: PW (мировая точка), REC и запись rec*.
+// Дерево как SDF. Требует <sdf>, <noise>, <retro> и глобалов из scene.frag: PW (мировая точка), REC и запись rec*,
+// POLY (гранёный PS1-вид) и snapW() (дрожание вершин), TREE_ORG/TREE_SC (мировые начало и масштаб дерева).
 //
 // Строение лиственного дерева:
 //  1. ствол — явный: изогнутая (crook/lean) сужающаяся колонна с корневым наплывом и 4 корнями;
@@ -14,6 +15,7 @@
 const float TAU = 6.2831853;
 
 float sdBranch(vec3 q, float L, float r0, float r1) {
+  if (POLY) return sdPrismBranch(q, L, r0, r1, 5.0); // PS1: пятигранная призма с плоскими торцами
   float h = clamp(q.y / max(L, 1e-4), 0.0, 1.0);
   return length(vec3(q.x, q.y - h * L, q.z)) - mix(r0, r1, h);
 }
@@ -62,14 +64,19 @@ float WIND_LOCAL; // сила ветра для текущего дерева
 // листовой комок: точное расстояние до сферы, шум добавляется позже (один на всё дерево)
 void blob(inout float leaf, vec3 q, float R, float id) {
   if (R <= 0.001) return;
-  float lb = length(q) - R;
+  float lb;
+  if (POLY) { // PS1: многогранник, повёрнутый по id — грани у соседних комков не совпадают
+    q.xz = rot2(id * 1.7) * q.xz;
+    q.yz = rot2(id * 0.9) * q.yz;
+    lb = sdDodeca(q, R * 0.92);
+  } else lb = length(q) - R;
   if (REC && lb < leaf) recHash = id;
-  leaf = opSmoothUnion(leaf, lb, 0.25);
+  leaf = POLY ? min(leaf, lb) : opSmoothUnion(leaf, lb, 0.25);
 }
 
 void bark(inout float d, float b, float k, vec3 q, float lvl) {
   if (REC && b < recBark) { recBark = b; recLocal = q; recLevel = lvl; }
-  d = opSmoothUnion(d, b, k);
+  d = opSmoothUnion(d, b, POLY ? k * 0.12 : k); // PS1: почти жёсткие стыки — видны грани
 }
 
 // поддерево скелетной ветви складыванием; g — рост этой ветви 0..1 (уровни появляются по очереди)
@@ -134,7 +141,7 @@ vec2 broadleaf(vec3 p, float seed, float g, int species, int levels) {
   float rT = rB * 0.55;
   float hh = clamp(q.y / H, 0.0, 1.0);
   float r = mix(rB, rT, hh) + rB * 0.7 * exp(-max(q.y, 0.0) * 5.0);
-  float d = length(vec3(q.x, q.y - hh * H, q.z)) - r;
+  float d = POLY ? max(ngonR(q.xz, 7.0) - r, q.y - H) : length(vec3(q.x, q.y - hh * H, q.z)) - r;
   if (REC) { recBark = d; recLocal = q; recLevel = 0.0; }
   // корни: расходятся и уходят в землю
   bool nearBase = q.y < rB * 3.0 + 0.4 && dot(q.xz, q.xz) < (rB * 6.0 + 0.4) * (rB * 6.0 + 0.4);
@@ -181,6 +188,8 @@ vec2 broadleaf(vec3 p, float seed, float g, int species, int levels) {
     float L = Lf * smoothstep(0.0, 1.0, gk);
     float rr = mix(rB, rT, y0 / H) * (top ? 0.85 : 0.68);
     vec3 lq = q - vec3(0.0, y0, 0.0);
+    // PS1: опорная точка ветви «прыгает» по пикселям низкого буфера независимо от ствола
+    if (POLY || JITTER) lq -= snapW(TREE_ORG + vec3(0.0, y0 + L, 0.0) * gs * TREE_SC) / (gs * TREE_SC);
     lq.xz = rot2(az) * lq.xz;
     lq.xy = rot2(el + WIND_LOCAL * 0.04 * sin(uWindT * 1.3 + float(k) * 2.1 + seed)) * lq.xy;
     // ограничивающая сфера ветви вместе с её кроной: далёкие точки (земля, другие ветви) не платят
@@ -209,7 +218,7 @@ vec2 broadleaf(vec3 p, float seed, float g, int species, int levels) {
   }
 
   // одно смещение шумом на всю листву: бугры-комки + мелкая «листовая» фактура; ветер её шевелит
-  if (leaf < 0.4) {
+  if (leaf < 0.4 && !POLY) {
     vec3 wp = PW / gs + vec3(sin(uWindT * 2.1), 0.0, cos(uWindT * 1.7)) * 0.05 * WIND_LOCAL;
     leaf += 0.16 * gnoise(wp * 2.2);
     // мелкая фактура — только у самой поверхности и не для теней/AO
@@ -231,11 +240,11 @@ vec2 spruce(vec3 p, float seed, float g) {
   p.xz -= (h.yz - 0.5) * 0.08 * p.y * p.y * 0.1;
   float rB = 0.17 * mix(0.4, 1.0, g);
   float hh = clamp(p.y / H, 0.0, 1.0);
-  float d = length(vec3(p.x, p.y - hh * H, p.z)) - mix(rB, 0.02, hh) - rB * 0.5 * exp(-max(p.y, 0.0) * 6.0);
+  float d = (POLY ? max(ngonR(p.xz, 6.0) - mix(rB, 0.02, hh), p.y - H) : length(vec3(p.x, p.y - hh * H, p.z)) - mix(rB, 0.02, hh)) - rB * 0.5 * exp(-max(p.y, 0.0) * 6.0);
   if (REC) { recBark = d; recLocal = p; recLevel = 0.0; }
   float y0 = 0.7, n = 7.0, sp = (H - y0) / n;
   float leaf = 1e9;
-  float rr = length(p.xz);
+  float rr = POLY ? ngonR(p.xz, 8.0) : length(p.xz); // PS1: восьмигранные ярусы
   float a = atan(p.z, p.x);
   float base = floor((p.y - y0) / sp);
   for (int j = 0; j < 3; j++) {
@@ -244,7 +253,7 @@ vec2 spruce(vec3 p, float seed, float g) {
     float f = i / n;
     float R = mix(1.55, 0.35, f) * mix(0.9, 1.1, hash11(seed + i)) * smoothstep(0.0, 0.7, g);
     // зубчатый край: радиус колеблется по углу
-    R *= 1.0 + 0.09 * sin(a * (7.0 + i) + seed + i * 1.3) + 0.05 * sin(a * 13.0 + i);
+    if (!POLY) R *= 1.0 + 0.09 * sin(a * (7.0 + i) + seed + i * 1.3) + 0.05 * sin(a * 13.0 + i);
     // юбка: отрезок в плоскости (r, y) от ствола вниз-наружу, толщина убывает к краю
     vec2 A = vec2(0.0, yi + sp * 1.1), B = vec2(R, yi - sp * 0.35);
     vec2 P = vec2(rr, p.y);
@@ -253,10 +262,10 @@ vec2 spruce(vec3 p, float seed, float g) {
     float th = mix(0.28, 0.06, t) * (0.6 + 0.4 * (1.0 - f));
     float s = length(P - A - ab * t) - th;
     if (REC && s < leaf) recHash = i + seed;
-    leaf = opSmoothUnion(leaf, s, 0.1);
+    leaf = POLY ? min(leaf, s) : opSmoothUnion(leaf, s, 0.1);
   }
   float tip = length(p - vec3(0.0, H + 0.1, 0.0)) - 0.12; // макушка
   leaf = min(leaf, tip);
-  if (leaf < 0.4 && !CHEAP) leaf += 0.04 * gnoise(PW / gs * 6.0);
+  if (leaf < 0.4 && !CHEAP && !POLY) leaf += 0.04 * gnoise(PW / gs * 6.0);
   return vec2(min(d, leaf * 0.85) * gs, leaf * 0.85 < d ? 2.0 : 0.0);
 }

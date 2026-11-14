@@ -119,6 +119,25 @@ Tree (`src/experiments/tree`): дерево на холме, реймарчин�
 за дерево. Производительность: GPU-узкое место — ветви; обёртки-циклы против инлайна и кэш ветвей в глобальных
 массивах замедляли (проверено) — не повторять. Отладка: `debug=steps|normals`.
 
+PS1-вид (`src/retro/retro.ts`, `src/glsl/retro.glsl`) — подключается к любой экранной сцене:
+```ts
+const retro = createRetro()
+params: { ...свои, ...retro.params }, buffers: retro.buffers,
+passes: retro.wrap({ name: 'scene', frag, uniforms }, fragPs1), // fragPs1 = `#define RETRO` + `#include "scene.frag"`
+uniforms(ctx) { retro.syncScale(ctx, обычныйRenderScale); ... }   // в ps1 канвас 1:1, иначе браузер мылит пиксели
+```
+Сцена рисуется в буфер 'retro' (в ps1 — `ps1Res` строк, целый делитель высоты канваса), проход present
+увеличивает NEAREST и квантует цвет (`ps1Bits`, Байер 4×4 по пикселям буфера). Параметры: look (normal/ps1),
+папка ps1 — lines, color bits, dither, vertex jitter (px), draw distance, facets (none/normals/snap/poly →
+`uPs1Facets` 0..3). PS1-код сцены — под `#ifdef RETRO`, в обычной сборке флаги — константы false (иначе
+обычный вид медленнее в ~1.5 раза: проверено). Хелперы <retro>: `retroQuantize`, `bayer4`, `sdPrismBranch`,
+`sdDodeca`/`sdIcosa` (низкополигональные «шары»), `ngonR`, `quantNormal`, `retroSnap` (дрожание вершин:
+смещение опорной точки до пиксельной сетки буфера — применять к началу объекта/ветви/вершине земли).
+Гранёность: честный PS1 даёт только гранёная геометрия (`poly`) — квантование нормали и привязка к сетке
+оставляют круглый силуэт. Ядро для этого получило `ctx.renderScale` (чтение/запись масштаба рендера).
+В Tree (ps1): земля из треугольников 1.6×1.6, трава — крестики-спрайты с пилообразным верхом, облака плоские,
+тени — «блин» под деревом и камнями, без AO и мягких теней; текстуры — хэш целого текселя.
+
 ## Шейдеры
 - `#include "file"` — рядом с файлом, затем `src/glsl`; `#include <name>` — только `src/glsl`; расширение
   `.glsl` можно опускать; include-once; циклы — ошибка.

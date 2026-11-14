@@ -107,6 +107,14 @@ const ctx: ExperimentContext = {
     gl.bindFramebuffer(gl.FRAMEBUFFER, null)
     return px
   },
+  get renderScale() {
+    return loop.scale
+  },
+  set renderScale(v) {
+    loop.scale = Math.min(1, Math.max(0.25, v))
+    loop.resize()
+    pane.refresh()
+  },
   get time() {
     return loop.time
   },
