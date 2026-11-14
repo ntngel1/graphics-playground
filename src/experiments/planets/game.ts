@@ -42,12 +42,14 @@ export const torHome = (() => { const h = worldToTor(sub(P_HOME, P_TOR)); return
 
 export interface Pad { p: V3; up: V3; to: V3; name: string }
 const pad = (s: { p: V3; up: V3 }, to: { p: V3 }, name: string): Pad => ({ p: s.p, up: s.up, to: to.p, name })
+// домашние грибы — на ~20° в сторону от прямой «центр → цель»: прямые тропы к маяку идут мимо
+const aside = (d: V3): V3 => { const n = norm(d); return add(n, mul(norm(cross(n, [0, 1, 0])), 0.35)) }
 const HOME_LAND = homeAt([0.3, 0.85, -0.05]) // подальше от грибов, домика и колодца
 const TOR_LAND = torAt(torHome.u + 0.5, torHome.v)
 export const PADS: Pad[] = [
-  pad(homeAt(sub(P_TOR, P_HOME)), TOR_LAND, 'на бублик'),
-  pad(homeAt(sub(P_PUMP, P_HOME)), pumpAt([-0.85, 0.5, 0.0]), 'на тыкву'),
-  pad(homeAt(sub(P_MOON, P_HOME)), moonAt([0.6, -0.2, 0.8]), 'на клубок'), // приземление в стороне от обратного гриба
+  pad(homeAt(aside(sub(P_TOR, P_HOME))), TOR_LAND, 'на бублик'),
+  pad(homeAt(aside(sub(P_PUMP, P_HOME))), pumpAt([-0.85, 0.5, 0.0]), 'на тыкву'),
+  pad(homeAt(aside(sub(P_MOON, P_HOME))), moonAt([0.6, -0.2, 0.8]), 'на клубок'), // приземление в стороне от обратного гриба
   pad(torAt(torHome.u - 0.15, torHome.v), HOME_LAND, 'домой'),
   pad(pumpAt(sub(P_HOME, P_PUMP)), HOME_LAND, 'домой'),
   pad(moonAt(sub(P_HOME, P_MOON)), HOME_LAND, 'домой'),
@@ -64,7 +66,14 @@ export const SPEED = 3.0, JUMP = 5.5, LAUNCH = 9, FLY_G = 9, RAD = 0.3
 export interface Item { p: V3; up: V3; state: 0 | 1 | 2 } // 0 лежит, 1 в руках, 2 в маяке
 export interface Game {
   pos: V3; vel: V3; up: V3; fwd: V3; camPitch: number; cam: V3
-  grounded: boolean; flight: { to: V3; t: number } | null
+  grounded: boolean; flight: { to: V3; t: number; from: V3; up: V3 } | null
+  jumpT: number // с с последнего прыжка: гриб подбрасывает только тех, кто на него запрыгнул
+  camFly: number // 0..1 — камера полёта (отъезд вбок от дуги)
+  camDist: number // дистанция камеры (в портрете больше — видна кривизна)
+  camLift: number // добавка к наклону камеры (в портрете выше — шар виден сверху)
+  trail: V3[] // след полёта (точки раз в 4 кадра)
+  look: V3 // куда смотрит камера
+  lastFlight?: { to: V3; t: number; from: V3; up: V3 } // для плавного возврата камеры после посадки
   carry: number; items: Item[]; lit: number; done: boolean; flash: number
   walk: number; t: number; frames: number
   input: { fwd: number; side: number; dyaw: number; dpitch: number; jump: boolean }
@@ -78,7 +87,7 @@ export function newGame(): Game {
   const fwd = norm(sub(toHouse, mul(up, dot(toHouse, up)))) // лицом к домику
   return {
     pos: [...SPAWN.p], vel: [0, 0, 0], up: [...up], fwd, camPitch: 0.28, cam: add(SPAWN.p, mul(up, 3)),
-    grounded: true, flight: null, carry: -1,
+    grounded: true, flight: null, carry: -1, jumpT: 9, camFly: 0, camDist: 5, camLift: 0, trail: [], look: add(SPAWN.p, mul(up, 1.1)),
     items: ITEM_SPOTS.map((s) => ({ p: [...s.p], up: [...s.up], state: 0 })),
     lit: 0, done: false, flash: 0, walk: 0, t: 0, frames: 0,
     input: { fwd: 0, side: 0, dyaw: 0, dpitch: 0, jump: false },
@@ -91,8 +100,9 @@ const rotAround = (v: V3, k: V3, a: number): V3 => add(add(mul(v, Math.cos(a)), 
 
 export const rightOf = (g: Game) => norm(cross(g.up, g.fwd))
 export const camWant = (g: Game): V3 => {
-  const back = add(mul(g.fwd, -Math.cos(g.camPitch)), mul(g.up, Math.sin(g.camPitch)))
-  return add(add(g.pos, mul(g.up, 1.4)), mul(back, 5.0))
+  const pt = Math.min(1.3, g.camPitch + g.camLift)
+  const back = add(mul(g.fwd, -Math.cos(pt)), mul(g.up, Math.sin(pt)))
+  return add(add(g.pos, mul(g.up, 1.2)), mul(back, g.camDist))
 }
 
 // probe: 8×4 float из probe.frag
@@ -128,7 +138,7 @@ export function step(g: Game, probe: Float32Array | null, dt = DT) {
   }
   // страховка: слишком далеко от всех планет — мягкий возврат домой
   if (pd > 40 && !g.flight) {
-    g.flight = { to: [...HOME_LAND.p], t: 0 }
+    g.flight = { to: [...HOME_LAND.p], t: 0, from: [...g.pos], up: [...g.up] }
     g.vel = mul(g.vel, 0.3)
     g.rescues++
   }
@@ -141,10 +151,11 @@ export function step(g: Game, probe: Float32Array | null, dt = DT) {
     const want = add(mul(g.fwd, g.input.fwd * SPEED), mul(rt, g.input.side * SPEED))
     vt = add(vt, mul(sub(want, vt), Math.min(1, dt * 12)))
     g.vel = add(vt, mul(g.up, Math.max(0, vn)))
-    if (g.input.jump) g.vel = add(g.vel, mul(g.up, JUMP))
+    if (g.input.jump) (g.vel = add(g.vel, mul(g.up, JUMP))), (g.jumpT = 0)
     g.walk += len(vt) * dt * 4.5
   }
   g.input.jump = false
+  g.jumpT += dt
 
   // ---- столкновения: выталкивание сфер тела по градиенту, гашение скорости внутрь ----
   for (const s of sph) {
@@ -163,17 +174,41 @@ export function step(g: Game, probe: Float32Array | null, dt = DT) {
   // стоим — прижать ноги к земле (на выпуклой планете шаг по касательной чуть отрывает)
   if (g.grounded && dot(g.vel, g.up) <= 0.01) g.pos = sub(g.pos, mul(g.up, Math.max(0, sph[0].d - RAD) * 0.5))
 
-  // ---- камера: не сквозь стены (луч зонда) ----
-  const want = camWant(g), head = add(g.pos, mul(g.up, 1.4))
+  // ---- камера: не сквозь стены (луч зонда); в полёте — отъезд вбок от дуги, видны обе планеты ----
+  const want = camWant(g), head = add(g.pos, mul(g.up, 1.2))
   const dir = sub(want, head), L = len(dir)
-  g.cam = add(head, mul(norm(dir), Math.max(0.8, Math.min(L, camT - 0.3))))
+  let cam = add(head, mul(norm(dir), Math.max(0.8, Math.min(L, camT - 0.3))))
+  let look = add(add(g.pos, mul(g.up, 1.1)), mul(g.fwd, 0.5))
+  g.camFly = g.flight ? Math.min(1, g.camFly + dt * 1.2) : Math.max(0, g.camFly - dt * 0.8)
+  if (g.flight) g.lastFlight = { ...g.flight }
+  const fl = g.lastFlight
+  if (g.camFly > 0 && fl) {
+    const span = sub(fl.to, fl.from), D = len(span)
+    const mid = add(fl.from, mul(span, 0.5))
+    let side = cross(span, fl.up)
+    if (len(side) < 1e-3) side = cross(span, [0, 1, 0])
+    side = norm(side)
+    // сторона, с которой камера уже ближе — без перескока через дугу
+    if (dot(side, sub(g.cam, mid)) < 0) side = mul(side, -1)
+    const fly = add(add(mid, mul(side, D * 0.95)), mul(fl.up, D * 0.35))
+    const w = g.camFly * g.camFly * (3 - 2 * g.camFly)
+    cam = add(mul(cam, 1 - w), mul(fly, w))
+    look = add(mul(look, 1 - w), mul(add(mul(g.pos, 0.5), mul(mid, 0.5)), w))
+  }
+  g.cam = cam
+  g.look = look
+  // след полёта
+  if (g.flight && g.frames % 4 === 0) (g.trail.push([...g.pos]), g.trail.length > 24 && g.trail.shift())
+  if (!g.flight && g.camFly === 0) g.trail.length = 0
 
   // ---- катапульты ----
   if (g.grounded)
     for (const p of PADS)
-      if (len(sub(g.pos, p.p)) < 1.2) { // шляпка (r 0.55) не подпускает ближе ~0.85
+      // срабатывает, только если запрыгнуть на шляпку: случайно не наступишь, и посадка после перелёта
+      // на гриб не отправляет обратно
+      if (g.jumpT < 1.0 && len(sub(g.pos, add(p.p, mul(p.up, 0.75)))) < 0.65) {
         g.vel = mul(p.up, LAUNCH)
-        g.flight = { to: [...p.to], t: 0 }
+        g.flight = { to: [...p.to], t: 0, from: [...g.pos], up: [...p.up] }
         g.pos = add(g.pos, mul(p.up, 0.3))
         g.launches++
         break

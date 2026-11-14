@@ -22,6 +22,8 @@
 #define M_CLOTH 15.0  // персонаж: одежда
 #define M_SKIN 16.0
 #define M_STEM 17.0   // хвостик тыквы, ножка гриба
+#define M_SCARF 18.0  // красный шарф и шапочка
+#define M_TRAIL 19.0  // (зарезервировано)
 
 const vec3 P_HOME = vec3(0.0, 0.0, 0.0);
 const float R_HOME = 6.0;
@@ -132,11 +134,13 @@ vec2 candle(vec3 q) {
 }
 
 // персонаж: ноги шагают, руки несут свечу, голова — додекаэдр
+// масштаб персонажа 0.85: q делим, расстояние умножаем
+const float PS = 0.85;
 vec2 player(vec3 p) {
   vec3 up = uPlayerUp, fw = uPlayerFwd, rt = normalize(cross(up, fw));
   vec3 d0 = p - uPlayerPos;
-  vec3 q = vec3(dot(d0, rt), dot(d0, up), dot(d0, fw));
-  if (dot(q, q) > 9.0) return vec2(length(q) - 2.0, M_CLOTH);
+  vec3 q = vec3(dot(d0, rt), dot(d0, up), dot(d0, fw)) / PS;
+  if (dot(q, q) > 9.0) return vec2((length(q) - 2.0) * PS, M_CLOTH);
   float sw = sin(uWalk) * 0.5;
   vec2 d = vec2(1e9, M_CLOTH);
   for (int i = 0; i < 2; i++) {
@@ -147,14 +151,16 @@ vec2 player(vec3 p) {
   }
   d = U(d, vec2(max(ngonR(q.xz, 6.0) - mix(0.24, 0.2, clamp((q.y - 0.55) / 0.55, 0.0, 1.0)), abs(q.y - 0.85) - 0.32), M_CLOTH));
   d = U(d, vec2(sdDodeca(q - vec3(0.0, 1.38, 0.0), 0.2), M_SKIN));
-  d = U(d, vec2(max(ngonR((q - vec3(0.0, 1.5, 0.0)).xz, 6.0) - 0.2, abs(q.y - 1.56) - 0.06), M_CLOTH)); // шапочка
+  d = U(d, vec2(max(ngonR((q - vec3(0.0, 1.5, 0.0)).xz, 6.0) - 0.2, abs(q.y - 1.56) - 0.06), M_SCARF)); // шапочка
+  d = U(d, vec2(max(ngonR(q.xz, 6.0) - 0.25, abs(q.y - 1.17) - 0.06), M_SCARF)); // шарф
+  d = U(d, vec2(sdBox(q - vec3(0.12, 1.0, 0.2), vec3(0.05, 0.17, 0.025)), M_SCARF)); // конец шарфа
   for (int i = 0; i < 2; i++) {
     float sg = i == 0 ? 1.0 : -1.0;
     vec3 a = q - vec3(0.27 * sg, 1.08, 0.0);
     a.yz = rot2(uCarry ? -1.2 : -sw * sg) * a.yz;
     d = U(d, vec2(sdBox(a - vec3(0.0, -0.2, 0.0), vec3(0.05, 0.22, 0.05)), M_CLOTH));
   }
-  return d;
+  return vec2(d.x * PS, d.y);
 }
 
 // весь мир: x — расстояние, y — материал. withPlayer: зонд физики считает мир без самого игрока

@@ -6,6 +6,7 @@ uniform vec3 uEye;
 uniform vec3 uTarget;
 uniform vec3 uCamUp;
 uniform float uFlash; // вспышка финала
+uniform vec4 uTrail[24]; // след полёта: точка xyz, w — есть (0..1, гаснет к хвосту)
 
 const vec3 SUN = normalize(vec3(0.5, 0.6, -0.62));
 
@@ -29,7 +30,7 @@ vec3 skyCol(vec3 rd) {
 
 float tex(vec2 uv) { return hash12(floor(uv)); }
 
-vec3 albedo(vec3 p, vec3 n, float m) {
+vec3 albedo(vec3 p, vec3 n, float m, float dist) {
   vec2 uv = (abs(n.y) > 0.6 ? p.xz : abs(n.x) > 0.5 ? p.zy : p.xy) * 6.0;
   float h = tex(uv);
   if (m < 1.5) { // трава с проплешинами и тропинкой к маяку
@@ -42,8 +43,10 @@ vec3 albedo(vec3 p, vec3 n, float m) {
     vec3 tq;
     torusLocal(p, tq);
     float top = smoothstep(-0.5, 1.5, tq.y);
-    vec3 c = mix(vec3(0.78, 0.55, 0.3), vec3(0.62, 0.36, 0.16), top) * (0.9 + 0.15 * h);
-    if (tex(uv * 1.5) > 0.93) c = vec3(0.12, 0.1, 0.12);
+    vec3 c = mix(vec3(0.82, 0.6, 0.34), vec3(0.66, 0.4, 0.18), top) * (0.92 + 0.1 * h);
+    // мак: только на румяной верхней стороне, мелкий и редкий, бурый, вдали гаснет (иначе рябит в PS1-буфере)
+    vec2 su = uv * 2.2;
+    if (tex(su) > 0.985 && top > 0.6) c = mix(c, vec3(0.2, 0.14, 0.12), smoothstep(14.0, 6.0, dist));
     return c;
   }
   if (m < 3.5) { // тыква: дольки темнее в бороздах
@@ -66,9 +69,10 @@ vec3 albedo(vec3 p, vec3 n, float m) {
   if (m < 12.5) return vec3(0.95, 0.9, 0.78);
   if (m < 13.5) return vec3(1.0, 0.75, 0.3);
   if (m < 14.5) return mix(vec3(0.3, 0.28, 0.25), vec3(1.0, 0.85, 0.5), uLit);
-  if (m < 15.5) return vec3(0.25, 0.42, 0.7) * (0.9 + 0.1 * h);
+  if (m < 15.5) return vec3(0.98, 0.78, 0.22) * (0.92 + 0.1 * h); // жёлтый плащ — контраст к фиолетовому небу
   if (m < 16.5) return vec3(0.95, 0.75, 0.6);
-  return vec3(0.4, 0.5, 0.25);
+  if (m < 17.5) return vec3(0.4, 0.5, 0.25);
+  return vec3(0.85, 0.2, 0.16); // красный шарф и шапочка
 }
 
 void main() {
@@ -96,7 +100,7 @@ void main() {
     const float e = 0.002;
     vec3 n = normalize(k.xyy * world(p + k.xyy * e, true).x + k.yyx * world(p + k.yyx * e, true).x
                      + k.yxy * world(p + k.yxy * e, true).x + k.xxx * world(p + k.xxx * e, true).x);
-    vec3 alb = albedo(p, n, m.y);
+    vec3 alb = albedo(p, n, m.y, t);
     float emit = m.y > 12.5 && m.y < 13.5 ? 1.6 : (m.y > 6.5 && m.y < 7.5) || (m.y > 13.5 && m.y < 14.5) ? 1.4 * uLit : 0.0;
     float dif = max(dot(n, SUN), 0.0);
     // тень от солнца — короткий марш (свои планеты затеняют друг друга)
@@ -113,6 +117,15 @@ void main() {
     vec3 beam = vec3(1.0, 0.75, 0.4) * uLit * 6.0 * max(dot(n, bl / bd), 0.0) / (1.0 + bd * bd * 0.15);
     col = alb * (vec3(0.32, 0.25, 0.4) + vec3(1.0, 0.8, 0.58) * 1.5 * dif * (0.3 + 0.7 * sh) + beam) + alb * emit;
     col = mix(col, sky * 0.6 + vec3(0.12, 0.08, 0.14), smoothstep(25.0, 85.0, t)); // сумеречная дымка
+  }
+  // след полёта: светящиеся точки дуги (пересечение луча со сферами, за поверхностью — нет)
+  for (int i = 0; i < 24; i++) {
+    if (uTrail[i].w <= 0.0) continue;
+    vec3 oc = ro - uTrail[i].xyz;
+    float b = dot(oc, rd), c = dot(oc, oc) - 0.0144, h = b * b - c;
+    if (h <= 0.0) continue;
+    float tt = -b - sqrt(h);
+    if (tt > 0.0 && (!hit || tt < t)) col = mix(col, vec3(1.0, 0.85, 0.5), 0.85 * uTrail[i].w);
   }
   col += uFlash * vec3(1.0, 0.85, 0.6);
   fragColor = vec4(col / (1.0 + col * 0.25), 1.0);

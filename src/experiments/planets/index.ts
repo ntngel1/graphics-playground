@@ -2,7 +2,7 @@ import { hmrState } from '../../core/hmr.ts'
 import { defineExperiment, type ExperimentContext, type ParamValue } from '../../core/types.ts'
 import { createFpsControls } from '../../fps/controls.ts'
 import { createRetro } from '../../retro/retro.ts'
-import { BEACON, ITEM_SPOTS, PADS, V, camWant, newGame, pumpAt, step, torAt, torHome, worldUniforms, type Game } from './game.ts'
+import { BEACON, ITEM_SPOTS, PADS, camWant, newGame, pumpAt, step, torAt, torHome, worldUniforms, type Game } from './game.ts'
 import probe from './probe.frag'
 import scene from './scene.frag'
 
@@ -39,12 +39,17 @@ function sceneUniforms(ctx: ExperimentContext): Record<string, ParamValue> {
     step(g, ctx.read('probe'), Math.min(ctx.dt, 1 / 30))
     st.sync()
   }
-  const target = V.add(V.add(g.pos, V.mul(g.up, 1.3)), V.mul(g.fwd, 0.6))
-  return { ...worldUniforms(g), uEye: g.cam, uTarget: target, uCamUp: g.up, uFlash: g.flash }
+  const cv = document.querySelector<HTMLCanvasElement>('#gl')
+  const aspect = cv ? cv.clientWidth / Math.max(1, cv.clientHeight) : 1.6
+  g.camDist = aspect < 1 ? 9 : 5 // в портрете дальше и выше: иначе кривизна не читается
+  g.camLift = aspect < 1 ? 0.3 : 0
+  const trail = new Float32Array(96)
+  g.trail.forEach((p, i) => trail.set([...p, (i + 1) / g.trail.length], i * 4))
+  return { ...worldUniforms(g), uEye: g.cam, uTarget: g.look, uCamUp: g.up, uFlash: g.flash, uTrail: trail as unknown as number[] }
 }
 
 const HINTS = {
-  start: 'Маяк погас. Найди три свечи на соседних планетах — мухоморы подбрасывают.',
+  start: 'Маяк погас. Найди три свечи на соседних планетах. Запрыгни на мухомор — он подбросит.',
   carry: 'Неси свечу к маяку.',
   done: 'Маяк горит. Видишь — окна зажглись.',
 }
