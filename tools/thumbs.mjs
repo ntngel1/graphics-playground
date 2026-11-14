@@ -22,6 +22,7 @@ const SETUP = {
   sine: { query: 'autopilot=switch', warm: 30000 },
   tree: { query: 'season=0.42', warm: 2500 },
   house: { query: '', warm: 3000 },
+  planets: { query: '', warm: 3000 },
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 

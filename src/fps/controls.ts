@@ -10,6 +10,7 @@ export interface FpsOptions {
   onAction: (a: string) => void
   buttons?: { id: string; label: string }[] // тач-кнопки
   enabled?: () => boolean // false — ввод игнорируется (например, до старта)
+  keys?: Record<string, string> // KeyboardEvent.code → действие (напр. { Space: 'jump' }); код — в ownKeys эксперимента
   sensitivity?: number
 }
 
@@ -41,6 +42,8 @@ export function createFpsControls(root: HTMLElement, o: FpsOptions) {
   const onKey = (e: KeyboardEvent) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return
     if ((e.code === 'KeyQ' || e.code === 'KeyE') && ok()) o.onAction('cycle')
+    const act = o.keys?.[e.code]
+    if (act && ok() && !e.repeat) (o.onAction(act), e.preventDefault())
     keys.add(e.code)
   }
   const onKeyUp = (e: KeyboardEvent) => void keys.delete(e.code)

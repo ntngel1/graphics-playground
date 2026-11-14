@@ -103,7 +103,7 @@ export default defineExperiment({
       $('.hs-start').hidden = true
       if (!coarse) cv.requestPointerLock?.()
     }
-    $('.hs-start button').addEventListener('click', start)
+    $('.hs-start').addEventListener('pointerdown', (e) => (e.preventDefault(), start())) // тап в любом месте оверлея
     $('.hs-end button').addEventListener('click', () => {
       st.g = newGame()
       st.sync()

@@ -338,3 +338,16 @@ body:has(.hs-ui) .gp-hints { top: max(8px, env(safe-area-inset-top)); bottom: au
 .fps-btns { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 28px); display: flex; flex-direction: column; gap: 8px; }
 .fps-btns button { padding: 12px 14px; border-radius: 12px; border: 1px solid #fff3; background: rgba(30, 20, 10, 0.55); color: #f3e6cf; font: 13px system-ui, sans-serif; }
 .hs-coarse .hs-charges { bottom: auto; top: calc(max(8px, env(safe-area-inset-top)) + 60px); }
+
+/* ---------- Tiny planets (planets) ---------- */
+.pl-ui { font: 13px/1.35 system-ui, -apple-system, sans-serif; color: #f6e6d0; }
+body:has(.pl-ui) .gp-hints { top: max(8px, env(safe-area-inset-top)); bottom: auto; }
+.pl-hud { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); max-width: min(70vw, 520px); pointer-events: none; text-shadow: 0 1px 3px #000; }
+.pl-hud b { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #ffc98a; }
+.pl-hud span { font-style: italic; }
+.pl-start { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(20, 10, 30, 0.5); }
+.pl-start[hidden] { display: none; }
+.pl-start > div { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.pl-start b { font: 600 26px/1.1 Georgia, serif; color: #ffe2b8; }
+.pl-how { color: #e8d2b8; }
+.pl-start button { padding: 10px 26px; border-radius: 999px; border: 0; background: #ffdcae; color: #2a1810; font: 600 15px system-ui, sans-serif; cursor: pointer; }
