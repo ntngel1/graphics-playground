@@ -316,3 +316,25 @@ body:has(.sn-ui) .gp-hints { top: max(8px, env(safe-area-inset-top)); bottom: au
 @media (max-width: 640px) { .sn-toast { font-size: 12px; } .sn-toast b { font-size: 13px; } }
 .sn-score { top: auto; left: max(12px, env(safe-area-inset-left)); bottom: max(14px, env(safe-area-inset-bottom)); transform: none; text-align: left; }
 @media (max-width: 640px) { .sn-score { bottom: auto; top: calc(max(8px, env(safe-area-inset-top)) + 64px); } }
+
+/* ---------- Impossible house (house): прицел, HUD, старт/конец, тач-управление ---------- */
+.hs-ui { font: 13px/1.35 system-ui, -apple-system, sans-serif; color: #f3e6cf; }
+body:has(.hs-ui) .gp-hints { top: max(8px, env(safe-area-inset-top)); bottom: auto; }
+.hs-cross { position: fixed; left: 50%; top: 50%; width: 4px; height: 4px; margin: -2px 0 0 -2px; border-radius: 50%; background: #fff8e8; box-shadow: 0 0 0 1px #0008; pointer-events: none; }
+.hs-hud { position: fixed; left: max(12px, env(safe-area-inset-left)); bottom: max(12px, env(safe-area-inset-bottom)); pointer-events: none; text-shadow: 0 1px 3px #000; opacity: 0.75; }
+.hs-hud b { display: block; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #e8c890; }
+.hs-hud span { font-style: italic; font-size: 13px; }
+.hs-charges { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: max(12px, env(safe-area-inset-bottom)); pointer-events: none; text-shadow: 0 1px 3px #000; font: 12px ui-monospace, Menlo, monospace; opacity: 0.8; }
+.hs-start, .hs-end { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(12, 8, 4, 0.55); }
+.hs-start[hidden], .hs-end[hidden] { display: none; }
+.hs-start > div, .hs-end > div { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
+.hs-start b, .hs-end b { font: 600 26px/1.1 Georgia, serif; color: #f6e2bc; }
+.hs-how, .hs-time { color: #d9c7a6; }
+.hs-start button, .hs-end button { padding: 10px 26px; border-radius: 999px; border: 0; background: #f0dcb4; color: #2a1d10; font: 600 15px system-ui, sans-serif; cursor: pointer; }
+/* src/fps/controls.ts: тач-стик и кнопки действий */
+.fps-stick { position: fixed; width: 120px; height: 120px; border-radius: 50%; border: 2px solid #fff4; opacity: 0; pointer-events: none; }
+.fps-stick.on { opacity: 1; }
+.fps-stick i { position: absolute; left: 40px; top: 40px; width: 40px; height: 40px; border-radius: 50%; background: #fff6; }
+.fps-btns { position: fixed; right: max(12px, env(safe-area-inset-right)); bottom: calc(max(12px, env(safe-area-inset-bottom)) + 28px); display: flex; flex-direction: column; gap: 8px; }
+.fps-btns button { padding: 12px 14px; border-radius: 12px; border: 1px solid #fff3; background: rgba(30, 20, 10, 0.55); color: #f3e6cf; font: 13px system-ui, sans-serif; }
+.hs-coarse .hs-charges { bottom: auto; top: calc(max(8px, env(safe-area-inset-top)) + 60px); }
