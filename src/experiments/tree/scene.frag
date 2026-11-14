@@ -17,6 +17,7 @@ uniform int uDebug;      // 0 картинка, 1 шаги марша, 2 нор�
 uniform float uPs1Jitter;
 uniform float uPs1Fog;
 uniform int uPs1Facets;  // 0 none, 1 normals, 2 snap, 3 poly
+uniform float uPs1Affine; // 0 — честные uv, 1 — аффинные (как PS1)
 
 #include <retro>
 
@@ -67,19 +68,33 @@ float groundH(vec2 xz) {
   return h;
 }
 
-// PS1: та же земля, но из треугольников 1.6×1.6 (вершины — groundH в узлах, по диагонали) —
-// плоские грани, вершины дрожат по пикселям вместе с камерой
+// PS1: та же земля, но из треугольников 1.6×1.6 (вершины — groundH в узлах, диагональ по клетке).
+// Каждая вершина дрожит целиком (xz и высота — привязка проекции к пикселю низкого буфера): высоты
+// сдвигаются напрямую, xz — непрерывным билинейным сдвигом области, поэтому швы «гуляют» без щелей.
+const float GS = 1.6;
+vec3 gVert(vec2 c) { // мировая вершина узла c (в клетках), с дрожанием
+  vec3 v = vec3(c.x * GS, groundH(c * GS), c.y * GS);
+  return v + snapW(v);
+}
+// треугольник под точкой: вершины A, B, C (мировые, с дрожанием), узлы ia/ib/ic и номер треугольника
+float groundTri(vec2 xz, out vec3 A, out vec3 B, out vec3 C, out vec2 ia, out vec2 ib, out vec2 ic, out vec3 tid) {
+  vec2 c = floor(xz / GS);
+  vec3 v00 = gVert(c), v10 = gVert(c + vec2(1.0, 0.0)), v01 = gVert(c + vec2(0.0, 1.0)), v11 = gVert(c + 1.0);
+  vec2 f = xz / GS - c;
+  // сдвиг области по xz — та же билинейная смесь сдвигов вершин (вершины «уезжают», швы следом)
+  vec2 sh = mix(mix(v00.xz - c * GS, v10.xz - (c + vec2(1.0, 0.0)) * GS, f.x), mix(v01.xz - (c + vec2(0.0, 1.0)) * GS, v11.xz - (c + 1.0) * GS, f.x), f.y);
+  f = (xz - sh) / GS - c;
+  bool up = f.x > f.y;
+  A = v00; B = up ? v10 : v11; C = up ? v11 : v01;
+  ia = c; ib = up ? c + vec2(1.0, 0.0) : c + 1.0; ic = up ? c + 1.0 : c + vec2(0.0, 1.0);
+  tid = vec3(c, up ? 1.0 : 0.0);
+  float hA = v00.y;
+  return up ? hA + (v10.y - hA) * f.x + (v11.y - v10.y) * f.y : hA + (v11.y - v01.y) * f.x + (v01.y - hA) * f.y;
+}
 float groundPoly(vec2 xz) {
-  const float S = 1.6;
-  vec2 c = floor(xz / S), f = xz / S - c;
-  vec4 h = vec4(groundH(c * S), groundH((c + vec2(1.0, 0.0)) * S), groundH((c + vec2(0.0, 1.0)) * S), groundH((c + 1.0) * S));
-  if (JITTER) {
-    h.x += snapW(vec3(c.x * S, h.x, c.y * S)).y;
-    h.y += snapW(vec3(c.x * S + S, h.y, c.y * S)).y;
-    h.z += snapW(vec3(c.x * S, h.z, c.y * S + S)).y;
-    h.w += snapW(vec3(c.x * S + S, h.w, c.y * S + S)).y;
-  }
-  return f.x > f.y ? h.x + (h.y - h.x) * f.x + (h.w - h.y) * f.y : h.x + (h.w - h.z) * f.x + (h.z - h.x) * f.y;
+  vec3 A, B, C, tid;
+  vec2 ia, ib, ic;
+  return groundTri(xz, A, B, C, ia, ib, ic, tid);
 }
 float groundAt(vec2 xz) { return POLY ? groundPoly(xz) : groundH(xz); }
 
@@ -182,6 +197,31 @@ float treeBound(vec3 tp, float gs) {
   return min(crown, trunk);
 }
 
+// PS1: дерево-«крестик» — две вертикальные плоскости с силуэтом кроны и ствола (процедурный «спрайт»)
+const float SPRITE_DIST = 13.0;
+vec2 treeSprite(vec3 p, float seed, int sp) {
+  float d = 1e9, mat = 1.0;
+  p -= snapW(TREE_ORG) / TREE_SC;
+  for (int k = 0; k < 2; k++) {
+    vec2 u = k == 0 ? p.xz : vec2(p.z, -p.x); // u.x — вдоль плоскости, u.y — поперёк
+    float x = u.x, y = p.y;
+    float crown, trunk = max(abs(x) - 0.14, y - 2.2);
+    if (sp == 2) { // ель: треугольник с зубцами ярусов
+      float w = (4.9 - y) * 0.34 * (1.0 - 0.28 * fract(y * 1.5));
+      crown = max(abs(x) - w, max(0.6 - y, y - 4.9));
+    } else { // лиственное: бугристый круг кроны
+      float sc = sp == 1 ? 0.75 : 1.0;
+      vec2 cq = vec2(x, y - 3.0 * (sp == 1 ? 1.25 : 1.0)) / sc;
+      float a = atan(cq.y, cq.x);
+      crown = (length(cq) - 1.7 * (1.0 + 0.1 * sin(a * 5.0 + seed) + 0.06 * sin(a * 9.0 + seed * 2.0))) * sc;
+    }
+    float s = min(crown, trunk);
+    float dd = max(s * 0.8, abs(u.y) - 0.02);
+    if (dd < d) { d = dd; mat = crown < trunk ? (sp == 2 ? 3.0 : 7.0) : 1.0; }
+  }
+  return vec2(d, mat);
+}
+
 vec2 treeAt(vec3 lp, float seed, float g, int sp, int levels) {
   if (sp == 2) return spruce(lp, seed, g);
   return broadleaf(lp, seed, g, sp, levels);
@@ -213,14 +253,16 @@ vec2 scene(vec3 p) {
 
   // лес: по дереву в клетке 10×10 (кроме центральной), свой seed/вид/размер, LOD по расстоянию
   if (uForest) {
-    const float CS = 10.0;
+    // PS1: лес гуще (клетка 7, деревья мельче) — при короткой дальности иначе видно одно-два дерева;
+    // дальние всё равно дешёвые спрайты
+    const float CS = PS1 ? 7.0 : 10.0;
     vec2 cell = round(p.xz / CS);
     vec2 lp = p.xz - cell * CS;
     if (!CHEAP) res.x = min(res.x, CS * 0.5 - max(abs(lp.x), abs(lp.y)) + 0.6);
     vec3 h = hash33(vec3(cell, 31.0));
-    if (cell != vec2(0.0) && max(abs(cell.x), abs(cell.y)) <= 4.0 && h.x < 0.62) {
-      vec2 c = cell * CS + (h.yz - 0.5) * 3.0;
-      float sz = mix(0.75, 1.15, h.y);
+    if (cell != vec2(0.0) && max(abs(cell.x), abs(cell.y)) <= (PS1 ? 6.0 : 4.0) && h.x < 0.62) {
+      vec2 c = cell * CS + (h.yz - 0.5) * (PS1 ? 2.0 : 3.0);
+      float sz = mix(0.75, 1.15, h.y) * (PS1 ? 0.8 : 1.0);
       TREE_ORG = vec3(c.x, groundAt(c) - 0.05, c.y);
       TREE_ORG += snapW(TREE_ORG);
       TREE_SC = sz;
@@ -228,9 +270,13 @@ vec2 scene(vec3 p) {
       if (treeBound(fp, 1.0) * sz < res.x) {
         float dc = length(c - uCamPos.xz);
         int sp = h.z < 0.3 ? 2 : h.z < 0.5 ? 1 : 0;
-        vec2 tr = treeAt(fp, floor(h.x * 977.0 + cell.x * 13.0 + cell.y * 7.0), 1.0, sp, dc < 16.0 ? 3 : 2);
+        float fseed = floor(h.x * 977.0 + cell.x * 13.0 + cell.y * 7.0);
+        // PS1: дальние деревья — плоские крестики-спрайты, переключение ступенькой (как LOD тех лет)
+        vec2 tr = PS1 && dc > SPRITE_DIST ? treeSprite(fp, fseed, sp) : treeAt(fp, fseed, 1.0, sp, dc < 16.0 ? 3 : 2);
         tr.x *= 0.7 * sz;
-        if (tr.x < res.x) res = vec2(tr.x, tr.y > 1.5 ? 3.0 : tr.y > 0.5 ? 2.0 : 1.0);
+        // treeAt: y 0 кора / 1 листва / 2 хвоя; спрайт отдаёт номер материала сразу (1, 3, 7)
+        float fm = PS1 && dc > SPRITE_DIST ? tr.y : tr.y > 1.5 ? 3.0 : tr.y > 0.5 ? 2.0 : 1.0;
+        if (tr.x < res.x) res = vec2(tr.x, fm);
       }
     }
   }
@@ -398,18 +444,58 @@ vec3 ps1Sky(vec3 rd) {
 // текстура «с дискеты»: случайное значение целого текселя
 float tex(vec2 uv) { return hash12(floor(uv)); }
 
+// проекция мировой точки в пиксели низкого буфера (как у камеры cameraRay, fov 40°)
+vec2 toScreen(vec3 w) {
+  vec3 r = w - uCamPos;
+  float z = max(dot(r, CAMW), 0.05);
+  return vec2(dot(r, CAMU), dot(r, CAMV)) / z * (2.7475 * 0.5 * min(uResolution.x, uResolution.y)) + 0.5 * uResolution;
+}
+vec3 bary2(vec2 p, vec2 a, vec2 b, vec2 c) {
+  vec2 v0 = b - a, v1 = c - a, v2 = p - a;
+  float d = v0.x * v1.y - v1.x * v0.y;
+  float v = (v2.x * v1.y - v1.x * v2.y) / d, w = (v0.x * v2.y - v2.x * v0.y) / d;
+  return vec3(1.0 - v - w, v, w);
+}
+
+// цвет вершины земли (как вершинные цвета PS1): крупные пятна травы, проплешины, тропинка
+vec3 groundVertCol(vec2 node, vec3 grassC) {
+  vec2 w = node * GS;
+  vec3 c = grassC * mix(0.82, 1.12, vnoise(w * 0.21 + 1.3));
+  float path = abs(w.x - (2.6 * sin(w.y * 0.23 + 1.0) + 3.0)) ; // тропинка петляет вдоль z
+  vec3 dirt = mix(vec3(0.52, 0.42, 0.3), vec3(0.62, 0.52, 0.38), vnoise(w * 0.5));
+  if (vnoise(w * 0.17 + 5.0) > 0.7) c = mix(c, dirt, 0.65);
+  if (path < 1.0 && length(w) > 2.0) c = dirt * 1.05;
+  return c;
+}
+
 vec3 ps1Shade(vec3 p, vec3 n, float mat, float t, vec3 rd) {
   vec3 grassC = SW.x * vec3(0.5, 0.72, 0.28) + SW.y * vec3(0.36, 0.58, 0.22) + SW.z * vec3(0.66, 0.58, 0.28) + SW.w * vec3(0.6, 0.58, 0.45);
-  // «плавание» текстуры: аффинная (без перспективной коррекции) выборка смещается с ракурсом —
-  // имитация: сдвиг uv на долю от направления взгляда, растущую к краям кадра
-  vec2 swim = rd.xz * dot(rd, CAMU) * 0.6;
+  vec2 swim = vec2(0.0);
   vec3 alb;
-  if (mat < 0.5) { // земля
-    vec2 uv = p.xz * 6.0 + swim;
-    alb = grassC * (0.78 + 0.32 * tex(uv));
-    // пятна земли: порог по value noise — края идут по текселям, но форма не квадратная
-    if (vnoise(floor(uv) * 0.11 + 7.0) > 0.78) alb = mix(vec3(0.5, 0.4, 0.28), vec3(0.6, 0.48, 0.34), tex(uv));
-    if (tex(uv + 3.0) > 0.993 && SW.x + SW.y > 0.5) alb = tex(uv + 9.0) > 0.5 ? vec3(0.95, 0.85, 0.3) : vec3(0.95, 0.6, 0.7);
+  float fogT = floor(t / 1.5) * 1.5; // туман считается «по вершинам»: дальние грани — ступеньками
+  if (mat < 0.5) { // земля: треугольник, вершинные цвета, своя раскладка текстуры на треугольник
+    vec3 A, B, C, tid;
+    vec2 ia, ib, ic;
+    groundTri(p.xz, A, B, C, ia, ib, ic, tid);
+    // аффинные uv, как у PS1: барицентрики в экранных координатах (без перспективной коррекции),
+    // против честных — в плоскости треугольника. uPs1Affine смешивает.
+    vec3 bp = bary2(p.xz, A.xz, B.xz, C.xz);
+    vec3 ba = bary2(gl_FragCoord.xy, toScreen(A), toScreen(B), toScreen(C));
+    vec3 bw = mix(bp, ba, uPs1Affine);
+    // раскладка текстуры на треугольник: поворот на 0/90/180/270° и сдвиг — тексели не совпадают с сеткой
+    vec3 th = hash33(tid + 0.5);
+    float ang = floor(th.x * 4.0) * 1.5708 + 0.35;
+    mat2 R = mat2(cos(ang), sin(ang), -sin(ang), cos(ang));
+    vec2 uv = R * ((bw.x * ia + bw.y * ib + bw.z * ic) * GS * 6.0) + th.yz * 37.0;
+    vec3 vc = bw.x * groundVertCol(ia, grassC) + bw.y * groundVertCol(ib, grassC) + bw.z * groundVertCol(ic, grassC);
+    vc *= 0.93 + 0.14 * th.z; // свой оттенок у треугольника
+    // текстура «64×64»: мелкие тексели + кластеры покрупнее, травинки — тёмные/светлые штрихи
+    float tx = 0.55 * tex(uv) + 0.45 * tex(floor(uv * 0.4) + 3.0);
+    alb = vc * (0.78 + 0.36 * tx);
+    if (tex(uv * 2.0 + 3.0) > 0.996 && SW.x + SW.y > 0.5) alb = tex(uv * 2.0 + 9.0) > 0.5 ? vec3(0.95, 0.85, 0.3) : vec3(0.95, 0.6, 0.7);
+    // туман по вершинам: в вершинах — по их глубине, внутри — интерполяция (те же аффинные барицентрики)
+    vec3 vd = vec3(length(A - uCamPos), length(B - uCamPos), length(C - uCamPos));
+    fogT = dot(bw, vd);
   } else if (mat < 1.5) { // кора: 6 столбцов по окружности, вертикальные штрихи
     vec3 q = recLocal;
     vec2 uv = vec2(atan(q.z, q.x) / 6.28318 * 6.0, q.y * 4.0);
@@ -427,6 +513,11 @@ vec3 ps1Shade(vec3 p, vec3 n, float mat, float t, vec3 rd) {
     alb = mat > 2.5 ? vec3(0.16, 0.32, 0.2) : (SW.x * spring + SW.y * summer + (SW.z + SW.w) * autumn);
     alb *= 0.72 + 0.45 * h;
     if (mat < 2.5 && uSpecies == 0 && h > 0.9) alb = mix(alb, vec3(1.0, 0.82, 0.88), SW.x);
+  } else if (mat > 6.5) { // крона дерева-спрайта: тексели по плоскости, свет почти не зависит от грани
+    vec2 uv = vec2(p.x + p.z, p.y) * 6.0;
+    vec3 summer = vec3(0.3, 0.52, 0.2), autumn = vec3(0.9, 0.5, 0.15);
+    alb = (SW.x * vec3(0.52, 0.74, 0.3) + SW.y * summer + SW.z * autumn + SW.w * vec3(0.45, 0.38, 0.32)) * (0.7 + 0.45 * tex(uv));
+    n = normalize(vec3(-rd.x, 0.6, -rd.z)); // «спрайт» освещён как повёрнутый к камере
   } else if (mat < 4.5) { // спрайты травы: кончики светлее
     float y = clamp((p.y - groundAt(p.xz)) / 0.3, 0.0, 1.0);
     alb = grassC * (0.75 + 0.35 * floor(y * 3.0) / 2.0) * (0.9 + 0.2 * tex(p.xz * 12.0));
@@ -446,14 +537,16 @@ vec3 ps1Shade(vec3 p, vec3 n, float mat, float t, vec3 rd) {
     float b = 1.0 - step(length((p.xz - TREE0.xz) * vec2(1.0, 1.15)), 1.7 * gs) * 0.42;
     for (int i = 0; i < 3; i++) b *= 1.0 - step(length(p.xz - ROCK[i].xz), 0.32 + 0.14 * float(i)) * 0.35;
     if (uForest) {
-      vec2 cell = round(p.xz / 10.0);
+      vec2 cell = round(p.xz / 7.0);
       vec3 h = hash33(vec3(cell, 31.0));
-      vec2 c = cell * 10.0 + (h.yz - 0.5) * 3.0;
-      if (cell != vec2(0.0) && h.x < 0.62) b *= 1.0 - step(length(p.xz - c), 1.6 * mix(0.75, 1.15, h.y)) * 0.42;
+      vec2 c = cell * 7.0 + (h.yz - 0.5) * 2.0;
+      if (cell != vec2(0.0) && h.x < 0.62) b *= 1.0 - step(length(p.xz - c), 1.3 * mix(0.75, 1.15, h.y)) * 0.42;
     }
     col *= b;
   }
-  return mix(col, FOGC, smoothstep(uPs1Fog * 0.3, uPs1Fog, t));
+  // туман густеет к границе прорисовки, но на ней не полный: дальние силуэты видны в дымке и «выскакивают»
+  // на границе, как в играх эпохи
+  return mix(col, FOGC, 0.85 * smoothstep(uPs1Fog * 0.35, uPs1Fog, fogT));
 }
 
 void main() {

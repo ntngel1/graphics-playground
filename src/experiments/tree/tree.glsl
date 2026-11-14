@@ -60,12 +60,24 @@ TP treeParams(float seed, int species) {
 
 float LEAF;       // количество листвы (сезон)
 float WIND_LOCAL; // сила ветра для текущего дерева
+float TREE_LS = 1.0; // мировых единиц на локальную единицу текущего дерева (рост × размер)
+
+// PS1: дрожание отдельного тела (комка, сегмента ветви, яруса). Псевдо-якорь тела — точка у кроны по хэшу
+// ключа; его проекция привязывается к пикселю низкого буфера, тело сдвигается на разницу (≤ ½ шага jitter).
+// Направление сдвига в локальной рамке тела не совпадает с экранным, но длина та же (вращения её не меняют),
+// а моменты скачков у соседних тел разные — картинка «трещит» по телам, как полигоны на PS1.
+vec3 bodyJit(float key) {
+  if (!JITTER) return vec3(0.0);
+  vec3 a = TREE_ORG + (hash33(vec3(key, TREE_ORG.x, TREE_ORG.z)) * vec3(3.0, 4.0, 3.0) - vec3(1.5, -0.4, 1.5)) * TREE_LS;
+  return snapW(a) / TREE_LS;
+}
 
 // листовой комок: точное расстояние до сферы, шум добавляется позже (один на всё дерево)
 void blob(inout float leaf, vec3 q, float R, float id) {
   if (R <= 0.001) return;
   float lb;
-  if (POLY) { // PS1: многогранник, повёрнутый по id — грани у соседних комков не совпадают
+  if (POLY) { // PS1: многогранник, повёрнутый по id — грани у соседних комков не совпадают; дрожит сам по себе
+    q -= bodyJit(id);
     q.xz = rot2(id * 1.7) * q.xz;
     q.yz = rot2(id * 0.9) * q.yz;
     lb = sdDodeca(q, R * 0.92);
@@ -93,7 +105,7 @@ void subtree(inout float d, inout float leaf, vec3 q, float L, float r, float se
     bool last = i >= levels - 1 || gn <= 0.0;
     // концевая ветка заострена, промежуточная сужается до радиуса детей (переход плавный — рост без скачков)
     float kids = i >= levels - 1 ? 0.0 : smoothstep(0.0, 0.35, gn);
-    bark(d, sdBranch(q, Li, r, r * mix(0.3, 0.72, kids)), r * 1.4, q, float(i) + 1.0);
+    bark(d, sdBranch(q - bodyJit(id * 7.0 + seed + float(i)), Li, r, r * mix(0.3, 0.72, kids)), r * 1.4, q, float(i) + 1.0);
     // комки на концах двух последних уровней (и на любой оборванной ветке)
     float tipLeaf = t.leafR * LEAF * mix(1.0, i >= levels - 2 ? 0.7 : 0.0, kids) * smoothstep(0.0, 0.6, g);
     // на концах складываемых веток — только мелкие «почки»: крупный комок резала бы плоскость складки
@@ -127,6 +139,7 @@ vec2 broadleaf(vec3 p, float seed, float g, int species, int levels) {
   TP t = treeParams(seed, species);
   float gs = mix(0.3, 1.0, smoothstep(0.0, 0.85, g));
   p /= gs;
+  TREE_LS = gs * TREE_SC;
   // ветер: всё дерево гнётся, сильнее к верху
   float sw = WIND_LOCAL * 0.016 * (sin(uWindT * 0.9 + seed) + 0.45 * sin(uWindT * 2.3 + seed * 2.0));
   p.x -= sw * p.y * p.y;
@@ -234,6 +247,7 @@ vec2 spruce(vec3 p, float seed, float g) {
   vec3 h = hash33(vec3(seed, 2.2, 8.8));
   float gs = mix(0.3, 1.0, smoothstep(0.0, 0.85, g));
   p /= gs;
+  TREE_LS = gs * TREE_SC;
   float H = mix(3.6, 4.8, h.x);
   float sw = WIND_LOCAL * 0.012 * (sin(uWindT * 0.9 + seed) + 0.45 * sin(uWindT * 2.3 + seed * 2.0));
   p.x -= sw * p.y * p.y;
@@ -257,6 +271,10 @@ vec2 spruce(vec3 p, float seed, float g) {
     // юбка: отрезок в плоскости (r, y) от ствола вниз-наружу, толщина убывает к краю
     vec2 A = vec2(0.0, yi + sp * 1.1), B = vec2(R, yi - sp * 0.35);
     vec2 P = vec2(rr, p.y);
+    if (JITTER) { // ярус дрожит целиком
+      vec3 pj = p - bodyJit(seed + i * 3.1);
+      P = vec2(ngonR(pj.xz, 8.0), pj.y);
+    }
     vec2 ab = B - A;
     float t = clamp(dot(P - A, ab) / dot(ab, ab), 0.0, 1.0);
     float th = mix(0.28, 0.06, t) * (0.6 + 0.4 * (1.0 - f));

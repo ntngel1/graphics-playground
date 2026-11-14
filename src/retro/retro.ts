@@ -33,8 +33,9 @@ export function createRetro(opts: { folder?: string } = {}) {
     ps1Bits: { label: 'color bits', value: 5, min: 2, max: 8, step: 1, folder },
     ps1Dither: { label: 'dither', value: 1, min: 0, max: 2, step: 0.05, folder },
     ps1Jitter: { label: 'vertex jitter (px)', value: 1, min: 0, max: 4, step: 0.25, folder },
-    ps1Fog: { label: 'draw distance', value: 32, min: 8, max: 60, step: 1, folder },
+    ps1Fog: { label: 'draw distance', value: 24, min: 8, max: 60, step: 1, folder },
     ps1Facets: { label: 'facets', value: 'poly', options: [...FACETS], folder },
+    ps1Affine: { label: 'affine uv', value: 1, min: 0, max: 1, step: 0.05, folder },
   }
   const buffers: Record<string, BufferSpec> = {
     retro: {

@@ -67,7 +67,7 @@ export default defineExperiment({
     sprout: { growth: 0.18, season: 0.2 },
     forest: { forest: true, season: 0.42 },
     ps1: { look: 'ps1' },
-    'ps1 forest': { look: 'ps1', forest: true, season: 0.42, ps1Fog: 45 },
+    'ps1 forest': { look: 'ps1', forest: true, season: 0.42 },
   },
   onPreset: (_n, ctx) => ctx.set({ seed: st.seed, species: st.species }),
   passes: retro.wrap({ name: 'scene', frag, uniforms: tick }, fragPs1),
